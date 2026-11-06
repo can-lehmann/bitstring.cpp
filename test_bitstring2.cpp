@@ -127,9 +127,6 @@ void test_random_operations() {
 int main(int argc, char** argv) {
   unittest::Suite suite(argc, argv);
 
-  suite.test("operator^").run(test_xor);
-  suite.test("random operations").run(test_random_operations);
-
   suite.test("constructor").run([]() {
     unittest_assert(BitString2(10).to_string() == "10'b0");
     unittest_assert(BitString2(0).to_string() == "0'b");
@@ -230,6 +227,10 @@ int main(int argc, char** argv) {
     unittest_assert(mask_between(1, LIMB_WIDTH) == (~Limb(0) ^ 1));
     unittest_assert(mask_between(1, LIMB_WIDTH - 1) == (~Limb(0) ^ 1 ^ (Limb(1) << (LIMB_WIDTH - 1))));
   });
+
+  suite.test("operator^").run(test_xor);
+  suite.test("random operations").run(test_random_operations);
+
 
   return suite.finish();
 }
