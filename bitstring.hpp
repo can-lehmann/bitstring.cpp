@@ -132,6 +132,9 @@ namespace bitstring {
 
     void set(size_t offset, size_t width, bool value) {
       assert(offset + width <= this->width());
+      if (width == 0) {
+        return;
+      }
       for (size_t it = offset / LIMB_WIDTH; it <= (offset + width - 1) / LIMB_WIDTH; it++) {
         size_t limb_offset = it * LIMB_WIDTH;
         size_t limb_width = std::min(LIMB_WIDTH, offset + width - limb_offset);
@@ -146,6 +149,9 @@ namespace bitstring {
 
     bool any(size_t offset, size_t width) const {
       assert(offset + width <= this->width());
+      if (width == 0) {
+        return false;
+      }
       for (size_t it = offset / LIMB_WIDTH; it <= (offset + width - 1) / LIMB_WIDTH; it++) {
         size_t limb_offset = it * LIMB_WIDTH;
         size_t limb_width = std::min(LIMB_WIDTH, offset + width - limb_offset);
@@ -180,6 +186,7 @@ namespace bitstring {
 
     always_inline BitString2 operator|(const BitStringBase2& other) const;
     always_inline BitString2 operator&(const BitStringBase2& other) const;
+    always_inline BitString2 operator^(const BitStringBase2& other) const;
     always_inline BitString2 operator~() const;
 
     void write(std::ostream& stream) const {
@@ -319,6 +326,16 @@ namespace bitstring {
     BitString2 result(width());
     for (size_t it = 0; it < limbs(); it++) {
       result.data()[it] = data()[it] & other.data()[it];
+    }
+    return result;
+  }
+
+  template <class Self>
+  always_inline BitString2 BitStringBase2<Self>::operator^(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    BitString2 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      result.data()[it] = data()[it] ^ other.data()[it];
     }
     return result;
   }
