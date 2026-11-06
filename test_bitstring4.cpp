@@ -18,8 +18,8 @@
 
 using namespace bitstring;
 
-int main() {
-  unittest::Suite suite;
+int main(int argc, char** argv) {
+  unittest::Suite suite(argc, argv);
 
   suite.test("constructor").run([]() {
     BitString4 a(100);
