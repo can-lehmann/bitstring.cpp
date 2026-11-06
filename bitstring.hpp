@@ -135,7 +135,7 @@ namespace bitstring {
       for (size_t it = offset / LIMB_WIDTH; it <= (offset + width - 1) / LIMB_WIDTH; it++) {
         size_t limb_offset = it * LIMB_WIDTH;
         size_t limb_width = std::min(LIMB_WIDTH, offset + width - limb_offset);
-        Limb mask = mask_between(offset - limb_offset, limb_width);
+        Limb mask = mask_between(offset > limb_offset ? offset - limb_offset : 0, limb_width);
         if (value) {
           data()[it] |= mask;
         } else {
@@ -149,7 +149,7 @@ namespace bitstring {
       for (size_t it = offset / LIMB_WIDTH; it <= (offset + width - 1) / LIMB_WIDTH; it++) {
         size_t limb_offset = it * LIMB_WIDTH;
         size_t limb_width = std::min(LIMB_WIDTH, offset + width - limb_offset);
-        Limb mask = mask_between(offset - limb_offset, limb_width);
+        Limb mask = mask_between(offset > limb_offset ? offset - limb_offset : 0, limb_width);
         if (data()[it] & mask) {
           return true;
         }
