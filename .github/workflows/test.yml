@@ -1,0 +1,24 @@
+name: test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          path: bitstring.cpp
+      - uses: actions/checkout@v6
+        with:
+          repository: can-lehmann/unittest.cpp
+          path: unittest.cpp
+      - name: Build and run unit tests
+        run: make -C bitstring.cpp test
