@@ -15,6 +15,7 @@
 // limitations under the License.
 
 #include <inttypes.h>
+#include <assert.h>
 #include <sstream>
 
 #define always_inline inline __attribute__((always_inline))
@@ -175,9 +176,23 @@ namespace bitstring {
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
-      for (size_t it = width(); it-- > 0; ) {
-        stream << (at(it) ? '1' : '0');
+      size_t it = width();
+      while (it > 0 && !at(it - 1)) {
+        it--;
       }
+      if (it == 0 && width() > 0) {
+        stream << '0';
+      } else {
+        while (it-- > 0) {
+          stream << (at(it) ? '1' : '0');
+        }
+      }
+    }
+
+    std::string to_string() const {
+      std::ostringstream stream;
+      write(stream);
+      return stream.str();
     }
   };
 
@@ -263,7 +278,7 @@ namespace bitstring {
     static BitString2 ones(size_t width) {
       BitString2 result(width);
       for (size_t it = 0; it < result.limbs(); it++) {
-        result._data.ptr[it] = ~(Limb)0;
+        result.data()[it] = ~(Limb)0;
       }
       return result;
     }

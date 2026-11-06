@@ -18,13 +18,16 @@
 
 using namespace bitstring;
 
-int main() {
-  unittest::Suite suite;
+int main(int argc, char** argv) {
+  unittest::Suite suite(argc, argv);
 
   suite.test("constructor").run([]() {
-    BitString2 a(100);
-    BitString2 b(100);
-    unittest_assert(a == b);
+    unittest_assert(BitString2(10).to_string() == "10'b0");
+    unittest_assert(BitString2(0).to_string() == "0'b");
+    unittest_assert(BitString2::zeros(128).to_string() == "128'b0");
+    unittest_assert(BitString2::ones(10).to_string() == "10'b1111111111");
+    unittest_assert(BitString2::fully(true, 3).to_string() == "3'b111");
+    unittest_assert(BitString2::fully(false, 2).to_string() == "2'b0");
   });
 
   return suite.finish();
