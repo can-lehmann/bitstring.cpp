@@ -25,16 +25,19 @@ namespace bitstring {
   static constexpr size_t LIMB_WIDTH = sizeof(Limb) * 8;
 
   always_inline size_t mask_lo(size_t width) {
-    size_t n = width % LIMB_WIDTH;
-    if (n == 0) {
+    if (width >= LIMB_WIDTH) {
       return ~(Limb)0;
     } else {
-      return ((Limb)1 << n) - 1;
+      return ((Limb)1 << width) - 1;
     }
   }
 
-  always_inline size_t mask_between(size_t offset, size_t width) {
-    return mask_lo(offset + width) & ~mask_lo(offset);
+  always_inline size_t mask_between(size_t lower, size_t upper) {
+    if (lower != 0) {
+      return mask_lo(upper) & ~mask_lo(lower);
+    } else {
+      return mask_lo(upper);
+    }
   }
 
   class BitString2;
@@ -54,7 +57,12 @@ namespace bitstring {
     }
 
     always_inline Limb upper_mask() const {
-      return mask_lo(width());
+      size_t n = width() % LIMB_WIDTH;
+      if (n == 0) {
+        return ~(Limb)0;
+      } else {
+        return ((Limb)1 << n) - 1;
+      }
     }
 
     bool operator==(const BitStringBase2& other) const {
@@ -142,7 +150,7 @@ namespace bitstring {
         size_t limb_offset = it * LIMB_WIDTH;
         size_t limb_width = std::min(LIMB_WIDTH, offset + width - limb_offset);
         Limb mask = mask_between(offset - limb_offset, limb_width);
-        if ((data()[it] & mask) != 0) {
+        if (data()[it] & mask) {
           return true;
         }
       }
@@ -211,6 +219,11 @@ namespace bitstring {
       } else {
         _data.ptr = new Limb[limbs()]();
       }
+    }
+
+    BitString2(size_t width, uint64_t value): BitString2(width) {
+      _Static_assert(sizeof(Limb) == sizeof(uint64_t), "Limb size must be 64 bits");
+      data()[0] = value;
     }
 
     ~BitString2() {
