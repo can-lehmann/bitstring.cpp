@@ -41,11 +41,19 @@ namespace bitstring {
   }
 
   always_inline Limb shl(Limb self, Limb lo, size_t inner_count) {
-    return (self << inner_count) | (lo >> (LIMB_WIDTH - inner_count));
+    if (inner_count == 0) {
+      return self;
+    } else {
+      return (self << inner_count) | (lo >> (LIMB_WIDTH - inner_count));
+    }
   }
 
   always_inline Limb shr(Limb hi, Limb self, size_t inner_count) {
-    return (self >> inner_count) | (hi << (LIMB_WIDTH - inner_count));
+    if (inner_count == 0) {
+      return self;
+    } else {
+      return (self >> inner_count) | (hi << (LIMB_WIDTH - inner_count));
+    }
   }
 
   class BitString2;
@@ -57,6 +65,19 @@ namespace bitstring {
     always_inline const Limb* data() const { return static_cast<const Self*>(this)->data(); }
     always_inline Limb* data() { return static_cast<Self*>(this)->data(); }
     always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
+
+    always_inline Limb masked_limb_with(size_t index, bool upper) const {
+      if (index < limbs()) {
+        if (index + 1 == limbs()) {
+          Limb limb = data()[index] & upper_mask();
+          return upper ? limb | ~upper_mask() : limb;
+        } else {
+          return data()[index];
+        }
+      } else {
+        return upper ? ~(Limb)0 : 0;
+      }
+    }
   public:
     BitStringBase2() {}
 
@@ -391,7 +412,13 @@ namespace bitstring {
     if (count >= width()) {
       return result;
     }
-    
+    size_t inner_count = count % LIMB_WIDTH;
+    size_t outer_count = count / LIMB_WIDTH;
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb self = masked_limb_with(it + outer_count, false);
+      Limb hi = masked_limb_with(it + outer_count + 1, false);
+      result.data()[it] = bitstring::shr(hi, self, inner_count);
+    }
     return result;
   }
 
@@ -401,7 +428,14 @@ namespace bitstring {
     if (count >= width()) {
       return result;
     }
-    
+    size_t inner_count = count % LIMB_WIDTH;
+    size_t outer_count = count / LIMB_WIDTH;
+    bool sign = at(width() - 1);
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb self = masked_limb_with(it + outer_count, sign);
+      Limb hi = masked_limb_with(it + outer_count + 1, sign);
+      result.data()[it] = bitstring::shr(hi, self, inner_count);
+    }
     return result;
   }
 
@@ -437,7 +471,15 @@ namespace bitstring {
   BitString2 BitStringBase2<Self>::operator*(const BitStringBase2& other) const {
     assert(width() == other.width());
     BitString2 result(width());
-    // TODO
+    if (limbs() == 1) {
+      result.data()[0] = data()[0] * other.data()[0];
+    } else {
+      for (size_t it = 0; it < width(); it++) {
+        if (other.at(it)) {
+          result = result + shl(it);
+        }
+      }
+    }
     return result;
   }
 
@@ -492,6 +534,14 @@ namespace bitstring {
         }
       }
       return true;
+    }
+
+    bool operator!=(const BitStringBase4& other) const {
+      return !(*this == other);
+    }
+
+    void write(std::ostream& stream) const {
+      // TODO
     }
   };
 
@@ -575,6 +625,18 @@ namespace bitstring {
     always_inline ABVal<const Limb*> data() const { return _data; }
     always_inline size_t width() const { return _width; }
   };
+}
+
+template <class Self>
+std::ostream& operator<<(std::ostream& stream, const bitstring::BitStringBase2<Self>& value) {
+  value.write(stream);
+  return stream;
+}
+
+template <class Self>
+std::ostream& operator<<(std::ostream& stream, const bitstring::BitStringBase4<Self>& value) {
+  value.write(stream);
+  return stream;
 }
 
 #undef always_inline
