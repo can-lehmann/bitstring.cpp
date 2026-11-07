@@ -183,6 +183,52 @@ int main(int argc, char** argv) {
     unittest_assert((BitString2(5, 0b10101) ^ BitString2(5, 0b00111)).to_string() == "5'b10010");
   });
 
+  suite.test("shl").run([]() {
+    unittest_assert(BitString2(5, 0b10101).shl(2).to_string() == "5'b10100");
+    unittest_assert(BitString2(5, 0b10101).shl(5).to_string() == "5'b0");
+    unittest_assert(BitString2(5, 0b10101).shl(0).to_string() == "5'b10101");
+    unittest_assert(BitString2(128, 0b1).shl(127).to_string() == "128'b1" + std::string(127, '0'));
+    unittest_assert(BitString2(128, 0b1).shl(0).to_string() == "128'b1");
+    unittest_assert(BitString2(128, 0b1).shl(63).to_string() == "128'b1" + std::string(63, '0'));
+    unittest_assert(BitString2(128, 0b11).shl(63).to_string() == "128'b11" + std::string(63, '0'));
+    unittest_assert(BitString2(128, 0b11).shl(63).shl(1).to_string() == "128'b11" + std::string(64, '0'));
+  });
+
+  suite.test("shr_u").run([]() {
+    unittest_assert(BitString2(5, 0b10101).shr_u(2).to_string() == "5'b101");
+    unittest_assert(BitString2(5, 0b10101).shr_u(5).to_string() == "5'b0");
+    unittest_assert(BitString2(128, 0b1).shl(127).shr_u(127).to_string() == "128'b1");
+    unittest_assert(BitString2(128, 0b11).shl(63).shr_u(63).to_string() == "128'b11");
+    unittest_assert(BitString2(128, 0b11).shl(127).shr_u(127).to_string() == "128'b1");
+  });
+
+  suite.test("shr_s").run([]() {
+    unittest_assert(BitString2(5, 0b10101).shr_s(2).to_string() == "5'b11101");
+    unittest_assert(BitString2(65, 0b1).shl(64).shr_s(64) == BitString2::ones(65));
+    unittest_assert(BitString2(65, 0b1).shl(64).shr_s(62) == BitString2::ones(65).shl(2));
+  });
+
+  suite.test("operator+").run([]() {
+    unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b01010)).to_string() == "5'b11111");
+    unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b00000)).to_string() == "5'b10101");
+    unittest_assert((BitString2(5, 0b00001) + BitString2(5, 0b00010)).to_string() == "5'b11");
+    unittest_assert((BitString2::ones(200) + BitString2(200, 1)).to_string() == "200'b0");
+  });
+
+  suite.test("operator-").run([]() {
+    unittest_assert((BitString2(5, 0b10101) - BitString2(5, 0b01010)).to_string() == "5'b1011");
+    unittest_assert((BitString2(5, 0b10101) - BitString2(5, 0b00000)).to_string() == "5'b10101");
+    unittest_assert((BitString2(5, 0b00001) - BitString2(5, 0b00010)).to_string() == "5'b11111");
+    unittest_assert((BitString2::ones(200) - BitString2(200, 1)).to_string() == "200'b" + std::string(199, '1') + "0");
+  });
+
+  suite.test("operator*").run([]() {
+    std::cout << (BitString2(128, 2) * BitString2(128, 3)).to_string() << std::endl;
+    unittest_assert((BitString2(128, 2) * BitString2(128, 3)).to_string() == "128'b110");
+    unittest_assert((BitString2(128, 100) * BitString2(128, 100)) == BitString2(128, 10000));
+    unittest_assert((BitString2(5, 2) * BitString2(5, 3)).to_string() == "5'b110");
+  });
+
   suite.test("random operations").run([]() {
     std::mt19937_64 random(0x62737472696e67);
     std::vector<size_t> widths = {0, 1, 2, 7, 8, 31, 32, 63, 64, 65, 127, 128, 129, 255, 256, 257, 1023, 1024, 1025};
