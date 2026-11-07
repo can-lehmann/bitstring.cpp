@@ -177,23 +177,6 @@ int main(int argc, char** argv) {
     unittest_assert((~BitString2(5, 0b11111)).to_string() == "5'b0");
   });
 
-  // Utilities
-
-  suite.test("utils/mask_lo").run([]() {
-    unittest_assert(mask_lo(0) == 0b0);
-    unittest_assert(mask_lo(3) == 0b111);
-    unittest_assert(mask_lo(LIMB_WIDTH) == ~(Limb)0);
-  });
-  
-  suite.test("utils/mask_between").run([]() {
-    unittest_assert(mask_between(0, 0) == 0b0);
-    unittest_assert(mask_between(0, 3) == 0b111);
-    unittest_assert(mask_between(2, 5) == 0b11100);
-    unittest_assert(mask_between(0, LIMB_WIDTH) == ~(Limb)0);
-    unittest_assert(mask_between(1, LIMB_WIDTH) == (~Limb(0) ^ 1));
-    unittest_assert(mask_between(1, LIMB_WIDTH - 1) == (~Limb(0) ^ 1 ^ (Limb(1) << (LIMB_WIDTH - 1))));
-  });
-
   suite.test("operator^").run([]() {
     unittest_assert((BitString2(5, 0b10101) ^ BitString2(5, 0b01010)).to_string() == "5'b11111");
     unittest_assert((BitString2(5, 0b10101) ^ BitString2(5, 0b10101)).to_string() == "5'b0");
@@ -226,6 +209,23 @@ int main(int argc, char** argv) {
         check_random_operations(view_a, view_b, expected_a, expected_b, random);
       }
     }
+  });
+
+  // Utilities
+
+  suite.test("utils/mask_lo").run([]() {
+    unittest_assert(mask_lo(0) == 0b0);
+    unittest_assert(mask_lo(3) == 0b111);
+    unittest_assert(mask_lo(LIMB_WIDTH) == ~(Limb)0);
+  });
+  
+  suite.test("utils/mask_between").run([]() {
+    unittest_assert(mask_between(0, 0) == 0b0);
+    unittest_assert(mask_between(0, 3) == 0b111);
+    unittest_assert(mask_between(2, 5) == 0b11100);
+    unittest_assert(mask_between(0, LIMB_WIDTH) == ~(Limb)0);
+    unittest_assert(mask_between(1, LIMB_WIDTH) == (~Limb(0) ^ 1));
+    unittest_assert(mask_between(1, LIMB_WIDTH - 1) == (~Limb(0) ^ 1 ^ (Limb(1) << (LIMB_WIDTH - 1))));
   });
 
   return suite.finish();
