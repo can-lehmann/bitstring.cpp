@@ -24,20 +24,28 @@ namespace bitstring {
   using Limb = uint64_t;
   static constexpr size_t LIMB_WIDTH = sizeof(Limb) * 8;
 
-  always_inline size_t mask_lo(size_t width) {
+  always_inline Limb mask_lo(size_t width) {
     if (width >= LIMB_WIDTH) {
       return ~(Limb)0;
     } else {
-      return ((Limb)1 << width) - 1;
+      return ((Limb)1 << (Limb)width) - 1;
     }
   }
 
-  always_inline size_t mask_between(size_t lower, size_t upper) {
+  always_inline Limb mask_between(size_t lower, size_t upper) {
     if (lower != 0) {
       return mask_lo(upper) & ~mask_lo(lower);
     } else {
       return mask_lo(upper);
     }
+  }
+
+  always_inline Limb shl(Limb self, Limb lo, size_t inner_count) {
+    return (self << inner_count) | (lo >> (LIMB_WIDTH - inner_count));
+  }
+
+  always_inline Limb shr(Limb hi, Limb self, size_t inner_count) {
+    return (self >> inner_count) | (hi << (LIMB_WIDTH - inner_count));
   }
 
   class BitString2;
@@ -163,6 +171,10 @@ namespace bitstring {
       return false;
     }
 
+    bool any() const {
+      return !is_fully(false);
+    }
+
     bool or_inplace(const BitStringBase2& other) {
       assert(width() == other.width());
       bool changed = false;
@@ -188,6 +200,14 @@ namespace bitstring {
     always_inline BitString2 operator&(const BitStringBase2& other) const;
     always_inline BitString2 operator^(const BitStringBase2& other) const;
     always_inline BitString2 operator~() const;
+
+    BitString2 shl(size_t count) const;
+    BitString2 shr_u(size_t count) const;
+    BitString2 shr_s(size_t count) const;
+
+    BitString2 operator+(const BitStringBase2& other) const;
+    BitString2 operator-(const BitStringBase2& other) const;
+    BitString2 operator*(const BitStringBase2& other) const;
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
@@ -346,6 +366,78 @@ namespace bitstring {
     for (size_t it = 0; it < limbs(); it++) {
       result.data()[it] = ~data()[it];
     }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::shl(size_t count) const {
+    BitString2 result(width());
+    if (count >= width()) {
+      return result;
+    }
+    size_t inner_count = count % LIMB_WIDTH;
+    size_t outer_count = count / LIMB_WIDTH;
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb lo = it > outer_count ? data()[it - outer_count - 1] : 0;
+      Limb self = it >= outer_count ? data()[it - outer_count] : 0;
+      result.data()[it] = bitstring::shl(self, lo, inner_count);
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::shr_u(size_t count) const {
+    BitString2 result(width());
+    if (count >= width()) {
+      return result;
+    }
+    
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::shr_s(size_t count) const {
+    BitString2 result(width());
+    if (count >= width()) {
+      return result;
+    }
+    
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::operator+(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    BitString2 result(width());
+    Limb carry = 0;
+    for (size_t it = 0; it < limbs(); it++) {
+      bool overflow = false;
+      overflow |= __builtin_add_overflow(data()[it], other.data()[it], &result.data()[it]);
+      overflow |= __builtin_add_overflow(result.data()[it], carry, &result.data()[it]);
+      carry = overflow ? 1 : 0;
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::operator-(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    BitString2 result(width());
+    Limb borrow = 0;
+    for (size_t it = 0; it < limbs(); it++) {
+      bool overflow = false;
+      overflow |= __builtin_sub_overflow(data()[it], other.data()[it], &result.data()[it]);
+      overflow |= __builtin_sub_overflow(result.data()[it], borrow, &result.data()[it]);
+      borrow = overflow ? 1 : 0;
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::operator*(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    BitString2 result(width());
+    // TODO
     return result;
   }
 
