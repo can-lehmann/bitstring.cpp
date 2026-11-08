@@ -39,5 +39,9 @@ int main(int argc, char** argv) {
     unittest_assert((BitString4("01xz01xz01xz01xz") & BitString4("00001111xxxxzzzz")) == BitString4("000001xx0xxx0xxx"));
   });
 
+  suite.test("operator^").run([]() {
+    unittest_assert((BitString4("01xz01xz01xz01xz") ^ BitString4("00001111xxxxzzzz")) == BitString4("01xx10xxxxxxxxxx"));
+  });
+
   return suite.finish();
 }

@@ -565,6 +565,7 @@ namespace bitstring {
 
     always_inline BitString4 operator|(const BitStringBase4& other) const;
     always_inline BitString4 operator&(const BitStringBase4& other) const;
+    always_inline BitString4 operator^(const BitStringBase4& other) const;
     always_inline BitString4 operator~() const;
 
     void write(std::ostream& stream) const {
@@ -746,6 +747,17 @@ namespace bitstring {
         (other.data().a[it] | other.data().b[it])
       );
       result.data().a[it] = (data().a[it] & other.data().a[it]) | res_b;
+      result.data().b[it] = res_b;
+    }
+    return result;
+  }
+
+  template <class Self>
+  always_inline BitString4 BitStringBase4<Self>::operator^(const BitStringBase4& other) const {
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb res_b = (data().b[it] | other.data().b[it]);
+      result.data().a[it] = (data().a[it] ^ other.data().a[it]) | res_b;
       result.data().b[it] = res_b;
     }
     return result;
