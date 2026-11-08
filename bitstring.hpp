@@ -17,6 +17,7 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <sstream>
+#include <optional>
 
 #define always_inline inline __attribute__((always_inline))
 
@@ -94,6 +95,12 @@ namespace bitstring {
       } else {
         return ((Limb)1 << n) - 1;
       }
+    }
+
+    template <class OtherSelf>
+    always_inline void copy_from(const BitStringBase2<OtherSelf>& other) {
+      assert(width() == other.width());
+      std::copy(other.data(), other.data() + limbs(), data());
     }
 
     template <class OtherSelf>
@@ -458,12 +465,12 @@ namespace bitstring {
   template <class Self>
   BitString2 BitStringBase2<Self>::shr_s(size_t count) const {
     BitString2 result(width());
+    bool sign = at(width() - 1);
     if (count >= width()) {
-      return result;
+      return BitString2::fully(sign, width());
     }
     size_t inner_count = count % LIMB_WIDTH;
     size_t outer_count = count / LIMB_WIDTH;
-    bool sign = at(width() - 1);
     for (size_t it = 0; it < limbs(); it++) {
       Limb self = masked_limb_with(it + outer_count, sign);
       Limb hi = masked_limb_with(it + outer_count + 1, sign);
@@ -604,6 +611,13 @@ namespace bitstring {
     always_inline const BitStringView2 b_val() const { return BitStringView2(const_cast<Limb*>(data().b), width()); }
 
     template <class OtherSelf>
+    always_inline void copy_from(const BitStringBase4<OtherSelf>& other) {
+      assert(width() == other.width());
+      std::copy(other.data().a, other.data().a + limbs(), data().a);
+      std::copy(other.data().b, other.data().b + limbs(), data().b);
+    }
+
+    template <class OtherSelf>
     bool operator==(const BitStringBase4<OtherSelf>& other) const {
       if (width() != other.width()) {
         return false;
@@ -674,6 +688,14 @@ namespace bitstring {
     always_inline BitString4 operator+(const BitStringBase4& other) const;
     always_inline BitString4 operator-(const BitStringBase4& other) const;
     always_inline BitString4 operator*(const BitStringBase4& other) const;
+
+    BitString4 shl(size_t count) const;
+    BitString4 shr_u(size_t count) const;
+    BitString4 shr_s(size_t count) const;
+
+    BitString4 shl(const BitStringBase4& count) const;
+    BitString4 shr_u(const BitStringBase4& count) const;
+    BitString4 shr_s(const BitStringBase4& count) const;
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
@@ -830,12 +852,6 @@ namespace bitstring {
     always_inline ABVal<Limb*> data() { return _data; }
     always_inline ABVal<const Limb*> data() const { return ABVal<const Limb*>{_data.a, _data.b}; }
     always_inline size_t width() const { return _width; }
-
-    always_inline void copy_from(const BitString4& other) {
-      assert(width() == other.width());
-      std::copy(other.data().a, other.data().a + limbs(), _data.a);
-      std::copy(other.data().b, other.data().b + limbs(), _data.b);
-    }
   };
 
   template <class Self>
@@ -890,7 +906,7 @@ namespace bitstring {
 
   #define binop(name, expr) \
     template <class Self> \
-    always_inline BitString4 BitStringBase4<Self>::op(const BitStringBase4& other) const { \
+    always_inline BitString4 BitStringBase4<Self>::name(const BitStringBase4& other) const { \
       assert(width() == other.width()); \
       if (b_val().any() || other.b_val().any()) { \
         return BitString4::fully(Bit4::X, width()); \
@@ -903,6 +919,29 @@ namespace bitstring {
   binop(operator*, a_val() * other.a_val())
 
   #undef binop
+
+  #define shift(name) \
+    template <class Self> \
+    BitString4 BitStringBase4<Self>::name(size_t count) const { \
+      BitString4 result(width()); \
+      result.a_val().copy_from(a_val().name(count)); \
+      result.b_val().copy_from(b_val().name(count)); \
+      return result; \
+    } \
+    \
+    template <class Self> \
+    BitString4 BitStringBase4<Self>::name(const BitStringBase4& count) const { \
+      if (count.b_val().any()) { \
+        return BitString4::fully(Bit4::X, width()); \
+      } \
+      return name(count.template as_u_opt<size_t>().value_or(width())); \
+    }
+
+  shift(shl)
+  shift(shr_u)
+  shift(shr_s)
+
+  #undef shift
 }
 
 template <class Self>
