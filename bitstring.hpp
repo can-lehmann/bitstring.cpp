@@ -56,6 +56,10 @@ namespace bitstring {
     }
   }
 
+  always_inline size_t limbs_for_width(size_t width) {
+    return (width + LIMB_WIDTH - 1) / LIMB_WIDTH;
+  }
+
   class BitString2;
   class BitStringView2;
 
@@ -81,9 +85,7 @@ namespace bitstring {
   public:
     BitStringBase2() {}
 
-    always_inline size_t limbs() const {
-      return (width() + LIMB_WIDTH - 1) / LIMB_WIDTH;
-    }
+    always_inline size_t limbs() const { return limbs_for_width(width()); }
 
     always_inline Limb upper_mask() const {
       size_t n = width() % LIMB_WIDTH;
@@ -94,7 +96,8 @@ namespace bitstring {
       }
     }
 
-    bool operator==(const BitStringBase2& other) const {
+    template <class OtherSelf>
+    bool operator==(const BitStringBase2<OtherSelf>& other) const {
       if (width() != other.width()) {
         return false;
       }
@@ -111,7 +114,8 @@ namespace bitstring {
       return true;
     }
 
-    bool operator!=(const BitStringBase2& other) const {
+    template <class OtherSelf>
+    bool operator!=(const BitStringBase2<OtherSelf>& other) const {
       return !(*this == other);
     }
 
@@ -215,6 +219,32 @@ namespace bitstring {
     always_inline Self& operator|=(const BitStringBase2& other) {
       or_inplace(other);
       return *static_cast<Self*>(this);
+    }
+
+    template <class T>
+    std::optional<T> as_u_opt() const {
+      _Static_assert(sizeof(T) <= sizeof(Limb));
+      if (limbs() == 1) {
+        if (data()[0] & upper_mask() & ~mask_lo(sizeof(T) * 8)) {
+          return std::nullopt;
+        }
+        return (T) (data()[0] & upper_mask());
+      } else if (limbs() > 1) {
+        if (data()[0] & ~mask_lo(sizeof(T) * 8)) {
+          return std::nullopt;
+        }
+        for (size_t it = 1; it + 1 < limbs(); it++) {
+          if (data()[it] != 0) {
+            return std::nullopt;
+          }
+        }
+        if (data()[limbs() - 1] & upper_mask()) {
+          return std::nullopt;
+        }
+        return (T) (data()[0]);
+      } else {
+        return 0;
+      }
     }
 
     always_inline BitString2 operator|(const BitStringBase2& other) const;
@@ -542,7 +572,19 @@ namespace bitstring {
     Z = 2,
     X = 3
   };
+}
 
+std::ostream& operator<<(std::ostream& stream, const bitstring::Bit4& value) {
+  switch (value) {
+    case bitstring::Bit4::Zero: stream << '0'; break;
+    case bitstring::Bit4::One: stream << '1'; break;
+    case bitstring::Bit4::Z: stream << 'z'; break;
+    case bitstring::Bit4::X: stream << 'x'; break;
+  }
+  return stream;
+}
+
+namespace bitstring {
   class BitString4;
 
   template <class Self>
@@ -554,23 +596,23 @@ namespace bitstring {
   public:
     BitStringBase4() {}
 
-    always_inline size_t limbs() const {
-      return (width() + 63) / 64;
-    }
+    always_inline size_t limbs() const { return limbs_for_width(width()); }
 
     always_inline BitStringView2 a_val() { return BitStringView2(data().a, width()); }
     always_inline const BitStringView2 a_val() const { return BitStringView2(const_cast<Limb*>(data().a), width()); }
     always_inline BitStringView2 b_val() { return BitStringView2(data().b, width()); }
     always_inline const BitStringView2 b_val() const { return BitStringView2(const_cast<Limb*>(data().b), width()); }
 
-    bool operator==(const BitStringBase4& other) const {
+    template <class OtherSelf>
+    bool operator==(const BitStringBase4<OtherSelf>& other) const {
       if (width() != other.width()) {
         return false;
       }
       return a_val() == other.a_val() && b_val() == other.b_val();
     }
 
-    bool operator!=(const BitStringBase4& other) const {
+    template <class OtherSelf>
+    bool operator!=(const BitStringBase4<OtherSelf>& other) const {
       return !(*this == other);
     }
 
@@ -593,6 +635,23 @@ namespace bitstring {
       }
     }
 
+    bool is_fully(Bit4 value) const {
+      switch (value) {
+        case Bit4::Zero: return a_val().is_fully(false) && b_val().is_fully(false);
+        case Bit4::One: return a_val().is_fully(true) && b_val().is_fully(false);
+        case Bit4::Z: return a_val().is_fully(false) && b_val().is_fully(true);
+        case Bit4::X: return a_val().is_fully(true) && b_val().is_fully(true);
+      }
+    }
+
+    template <class T>
+    std::optional<T> as_u_opt() const {
+      if (!b_val().any()) {
+        return a_val().template as_u_opt<T>();
+      }
+      return std::nullopt;
+    }
+
     #define cmp(name, expr) \
       Bit4 name(const BitStringBase4& other) const { \
         if (b_val().any() || other.b_val().any()) { \
@@ -611,6 +670,10 @@ namespace bitstring {
     always_inline BitString4 operator&(const BitStringBase4& other) const;
     always_inline BitString4 operator^(const BitStringBase4& other) const;
     always_inline BitString4 operator~() const;
+
+    always_inline BitString4 operator+(const BitStringBase4& other) const;
+    always_inline BitString4 operator-(const BitStringBase4& other) const;
+    always_inline BitString4 operator*(const BitStringBase4& other) const;
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
@@ -758,13 +821,21 @@ namespace bitstring {
 
   class BitStringView4 final: public BitStringBase4<BitStringView4> {
   private:
-    ABVal<const Limb*> _data;
+    ABVal<Limb*> _data;
     size_t _width;
   public:
-    BitStringView4(ABVal<const Limb*> data, size_t width): _data(data), _width(width) {}
+    BitStringView4(ABVal<Limb*> data, size_t width): _data(data), _width(width) {}
+    BitStringView4(Limb* a, Limb* b, size_t width): _data({a, b}), _width(width) {}
     
-    always_inline ABVal<const Limb*> data() const { return _data; }
+    always_inline ABVal<Limb*> data() { return _data; }
+    always_inline ABVal<const Limb*> data() const { return ABVal<const Limb*>{_data.a, _data.b}; }
     always_inline size_t width() const { return _width; }
+
+    always_inline void copy_from(const BitString4& other) {
+      assert(width() == other.width());
+      std::copy(other.data().a, other.data().a + limbs(), _data.a);
+      std::copy(other.data().b, other.data().b + limbs(), _data.b);
+    }
   };
 
   template <class Self>
@@ -816,6 +887,22 @@ namespace bitstring {
     }
     return result;
   }
+
+  #define binop(name, expr) \
+    template <class Self> \
+    always_inline BitString4 BitStringBase4<Self>::op(const BitStringBase4& other) const { \
+      assert(width() == other.width()); \
+      if (b_val().any() || other.b_val().any()) { \
+        return BitString4::fully(Bit4::X, width()); \
+      } \
+      return BitString4(expr); \
+    }
+  
+  binop(operator+, a_val() + other.a_val())
+  binop(operator-, a_val() - other.a_val())
+  binop(operator*, a_val() * other.a_val())
+
+  #undef binop
 }
 
 template <class Self>
