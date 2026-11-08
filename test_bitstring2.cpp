@@ -208,6 +208,32 @@ int main(int argc, char** argv) {
     unittest_assert(BitString2(65, 0b1).shl(64).shr_s(62) == BitString2::ones(65).shl(2));
   });
 
+  suite.test("lt_u").run([]() {
+    unittest_assert(BitString2(5, 0b00001).lt_u(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(5, 0b00010).lt_u(BitString2(5, 0b00001)));
+    unittest_assert(!BitString2(5, 0b10101).lt_u(BitString2(5, 0b10101)));
+    unittest_assert(BitString2(5, 0b00001).lt_u(BitString2(5, 0b10000)));
+    unittest_assert(!BitString2(0).lt_u(BitString2(0)));
+    unittest_assert(BitString2(128, 1).lt_u(BitString2(128, 1).shl(100)));
+    unittest_assert(!BitString2(128, 1).shl(100).lt_u(BitString2(128, 1)));
+    unittest_assert(BitString2(128, 1).shl(100).lt_u(BitString2::ones(128)));
+    unittest_assert(!BitString2::ones(128).lt_u(BitString2::ones(128)));
+  });
+
+  suite.test("lt_s").run([]() {
+    unittest_assert(BitString2(5, 0b10000).lt_s(BitString2(5, 0b00001)));
+    unittest_assert(!BitString2(5, 0b00001).lt_s(BitString2(5, 0b10000)));
+    unittest_assert(BitString2(5, 0b11111).lt_s(BitString2(5, 0b00000)));
+    unittest_assert(BitString2(5, 0b10000).lt_s(BitString2(5, 0b11111)));
+    unittest_assert(BitString2(5, 0b00001).lt_s(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(5, 0b00010).lt_s(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(0).lt_s(BitString2(0)));
+    unittest_assert(BitString2::ones(128).lt_s(BitString2(128, 0)));
+    unittest_assert(!BitString2(128, 0).lt_s(BitString2::ones(128)));
+    unittest_assert(BitString2(128, 1).shl(127).lt_s(BitString2(128, 1)));
+    unittest_assert(BitString2(128, 1).shl(127).lt_s(BitString2::ones(128)));
+  });
+
   suite.test("operator+").run([]() {
     unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b01010)).to_string() == "5'b11111");
     unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b00000)).to_string() == "5'b10101");
@@ -255,6 +281,85 @@ int main(int argc, char** argv) {
         check_random_operations(view_a, view_b, expected_a, expected_b, random);
       }
     }
+  });
+
+  suite.test("from_bool").run([]() {
+    unittest_assert(BitString2::from_bool(true).to_string() == "1'b1");
+    unittest_assert(BitString2::from_bool(false).to_string() == "1'b0");
+  });
+
+  suite.test("random").run([]() {
+    unittest_assert(BitString2::random(0).width() == 0);
+    unittest_assert(BitString2::random(100).width() == 100);
+  });
+
+  suite.test("mask_lower").run([]() {
+    unittest_assert(BitString2::mask_lower(5, 3).to_string() == "5'b111");
+    unittest_assert(BitString2::mask_lower(5, 0).to_string() == "5'b0");
+    unittest_assert(BitString2::mask_lower(5, 9).to_string() == "5'b11111");
+    unittest_assert(BitString2::mask_lower(128, 70) == BitString2::ones(128).shr_u(58));
+  });
+
+  suite.test("concat").run([]() {
+    unittest_assert(BitString2::concat(BitString2(2, 0b10), BitString2(3, 0b011)).to_string() == "5'b10011");
+    unittest_assert(BitString2::concat(BitString2(70, 1), BitString2(60, 0)) == BitString2(130, 1).shl(60));
+    unittest_assert(BitString2::concat(BitString2(0), BitString2(0)).width() == 0);
+  });
+
+  suite.test("slice").run([]() {
+    unittest_assert(BitString2(8, 0b11010110).slice(2, 4).to_string() == "4'b101");
+    unittest_assert(BitString2(8, 0b11010110).slice(0, 8) == BitString2(8, 0b11010110));
+    unittest_assert(BitString2(8, 0b11010110).slice(3, 0).width() == 0);
+    unittest_assert(BitString2(200, 1).shl(150).slice(100, 100) == BitString2(100, 1).shl(50));
+  });
+
+  suite.test("reverse").run([]() {
+    unittest_assert(BitString2(5, 0b10110).reverse().to_string() == "5'b1101");
+    unittest_assert(BitString2(130, 1).reverse() == BitString2(130, 1).shl(129));
+  });
+
+  suite.test("repeat").run([]() {
+    unittest_assert(BitString2(3, 0b101).repeat(2).to_string() == "6'b101101");
+    unittest_assert(BitString2(3, 0b101).repeat(1) == BitString2(3, 0b101));
+    unittest_assert(BitString2(3, 0b101).repeat(0).width() == 0);
+    unittest_assert(BitString2(1, 1).repeat(100) == BitString2::ones(100));
+  });
+
+  suite.test("as_ascii").run([]() {
+    unittest_assert(BitString2(16, 0x4142).as_ascii() == "AB");
+    unittest_assert(BitString2(24, 0x414243).as_ascii() == "ABC");
+    unittest_assert(BitString2(0).as_ascii() == "");
+  });
+
+  suite.test("as_u").run([]() {
+    unittest_assert(BitString2(8, 200).as_u<uint8_t>() == 200);
+    unittest_assert(BitString2(100, 1234).as_u<uint64_t>() == 1234);
+    bool thrown = false;
+    try {
+      BitString2(100, 1).shl(70).as_u<uint64_t>();
+    } catch (const std::runtime_error&) {
+      thrown = true;
+    }
+    unittest_assert(thrown);
+  });
+
+  suite.test("has_unknown").run([]() {
+    unittest_assert(!BitString2(5, 0b10101).has_unknown());
+  });
+
+  suite.test("unary operator-").run([]() {
+    unittest_assert((-BitString2(5, 1)).to_string() == "5'b11111");
+    unittest_assert((-BitString2(5, 0)).to_string() == "5'b0");
+    unittest_assert(-BitString2(130, 1) == BitString2::ones(130));
+  });
+
+  suite.test("write_hex").run([]() {
+    std::ostringstream stream;
+    BitString2(12, 0xabc).write_hex(stream);
+    unittest_assert(stream.str() == "12'habc");
+    std::ostringstream odd_stream;
+    BitString2(5, 0x1f).write_hex(odd_stream);
+    unittest_assert(odd_stream.str() == "5'h1f");
   });
 
   // Utilities

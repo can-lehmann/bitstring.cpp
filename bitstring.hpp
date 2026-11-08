@@ -17,6 +17,13 @@
 #include <inttypes.h>
 #include <assert.h>
 #include <sstream>
+#include <optional>
+#include <algorithm>
+#include <cstdlib>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <vector>
 
 #define always_inline inline __attribute__((always_inline))
 
@@ -56,15 +63,20 @@ namespace bitstring {
     }
   }
 
+  always_inline size_t limbs_for_width(size_t width) {
+    return (width + LIMB_WIDTH - 1) / LIMB_WIDTH;
+  }
+
   class BitString2;
   class BitStringView2;
 
   template <class Self>
   class BitStringBase2 {
   private:
+    template <class> friend class BitStringBase2;
+
     always_inline const Limb* data() const { return static_cast<const Self*>(this)->data(); }
     always_inline Limb* data() { return static_cast<Self*>(this)->data(); }
-    always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
 
     always_inline Limb masked_limb_with(size_t index, bool upper) const {
       if (index < limbs()) {
@@ -81,9 +93,8 @@ namespace bitstring {
   public:
     BitStringBase2() {}
 
-    always_inline size_t limbs() const {
-      return (width() + LIMB_WIDTH - 1) / LIMB_WIDTH;
-    }
+    always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
+    always_inline size_t limbs() const { return limbs_for_width(width()); }
 
     always_inline Limb upper_mask() const {
       size_t n = width() % LIMB_WIDTH;
@@ -94,7 +105,14 @@ namespace bitstring {
       }
     }
 
-    bool operator==(const BitStringBase2& other) const {
+    template <class OtherSelf>
+    always_inline void copy_from(const BitStringBase2<OtherSelf>& other) {
+      assert(width() == other.width());
+      std::copy(other.data(), other.data() + limbs(), data());
+    }
+
+    template <class OtherSelf>
+    bool operator==(const BitStringBase2<OtherSelf>& other) const {
       if (width() != other.width()) {
         return false;
       }
@@ -111,7 +129,8 @@ namespace bitstring {
       return true;
     }
 
-    bool operator!=(const BitStringBase2& other) const {
+    template <class OtherSelf>
+    bool operator!=(const BitStringBase2<OtherSelf>& other) const {
       return !(*this == other);
     }
 
@@ -217,18 +236,92 @@ namespace bitstring {
       return *static_cast<Self*>(this);
     }
 
+    template <class T>
+    std::optional<T> as_u_opt() const {
+      _Static_assert(sizeof(T) <= sizeof(Limb));
+      if (limbs() == 1) {
+        if (data()[0] & upper_mask() & ~mask_lo(sizeof(T) * 8)) {
+          return std::nullopt;
+        }
+        return (T) (data()[0] & upper_mask());
+      } else if (limbs() > 1) {
+        if (data()[0] & ~mask_lo(sizeof(T) * 8)) {
+          return std::nullopt;
+        }
+        for (size_t it = 1; it + 1 < limbs(); it++) {
+          if (data()[it] != 0) {
+            return std::nullopt;
+          }
+        }
+        if (data()[limbs() - 1] & upper_mask()) {
+          return std::nullopt;
+        }
+        return (T) (data()[0]);
+      } else {
+        return 0;
+      }
+    }
+
+    template <class T>
+    T as_u() const {
+      if (std::optional<T> result = as_u_opt<T>()) {
+        return *result;
+      }
+      std::ostringstream stream;
+      stream << "BitString ";
+      write(stream);
+      stream << " is not in range for unsigned integer type of size " << sizeof(T);
+      throw std::runtime_error(stream.str());
+    }
+
+    bool has_unknown() const {
+      return false;
+    }
+
+    void write_hex(std::ostream& stream) const {
+      stream << width() << "'h";
+      uint8_t digit = 0;
+      for (size_t it = width(); it-- > 0;) {
+        digit = (digit << 1) | (at(it) ? 1 : 0);
+        if (it % 4 == 0) {
+          stream << "0123456789abcdef"[digit];
+          digit = 0;
+        }
+      }
+    }
+
     always_inline BitString2 operator|(const BitStringBase2& other) const;
     always_inline BitString2 operator&(const BitStringBase2& other) const;
     always_inline BitString2 operator^(const BitStringBase2& other) const;
     always_inline BitString2 operator~() const;
+    BitString2 operator-() const;
+
+    BitString2 slice(size_t offset, size_t width) const;
+    BitString2 reverse() const;
+    BitString2 repeat(size_t count) const;
 
     BitString2 shl(size_t count) const;
     BitString2 shr_u(size_t count) const;
     BitString2 shr_s(size_t count) const;
 
+    bool lt_u(const BitStringBase2& other) const;
+    bool lt_s(const BitStringBase2& other) const;
+
     BitString2 operator+(const BitStringBase2& other) const;
     BitString2 operator-(const BitStringBase2& other) const;
     BitString2 operator*(const BitStringBase2& other) const;
+
+    std::string as_ascii() const {
+      size_t byte_count = (width() + 7) / 8;
+      std::string result;
+      result.reserve(byte_count);
+      for (size_t byte = byte_count; byte-- > 0;) {
+        size_t offset = byte * 8;
+        size_t byte_width = std::min<size_t>(8, width() - offset);
+        result.push_back(char(slice(offset, byte_width).template as_u<uint8_t>()));
+      }
+      return result;
+    }
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
@@ -300,6 +393,10 @@ namespace bitstring {
 
     BitString2& operator=(const BitString2& other) {
       if (this != &other) {
+        if (_width == other._width) {
+          copy_from(other);
+          return *this;
+        }
         this->~BitString2();
         new (this) BitString2(other);
       }
@@ -350,6 +447,35 @@ namespace bitstring {
       } else {
         return zeros(width);
       }
+    }
+
+    static BitString2 from_bool(bool value) {
+      return BitString2(1, value ? 1 : 0);
+    }
+
+    static BitString2 random(size_t width) {
+      BitString2 result(width);
+      for (size_t it = 0; it < width; it++) {
+        result.set(it, rand() % 2 == 1);
+      }
+      return result;
+    }
+
+    static BitString2 mask_lower(size_t width, size_t lower_width) {
+      BitString2 result(width);
+      result.set(0, std::min(width, lower_width), true);
+      return result;
+    }
+
+    static BitString2 concat(const BitString2& high, const BitString2& low) {
+      BitString2 result(high.width() + low.width());
+      for (size_t it = 0; it < low.width(); it++) {
+        result.set(it, low.at(it));
+      }
+      for (size_t it = 0; it < high.width(); it++) {
+        result.set(low.width() + it, high.at(it));
+      }
+      return result;
     }
   };
 
@@ -425,18 +551,45 @@ namespace bitstring {
   template <class Self>
   BitString2 BitStringBase2<Self>::shr_s(size_t count) const {
     BitString2 result(width());
+    bool sign = at(width() - 1);
     if (count >= width()) {
-      return result;
+      return BitString2::fully(sign, width());
     }
     size_t inner_count = count % LIMB_WIDTH;
     size_t outer_count = count / LIMB_WIDTH;
-    bool sign = at(width() - 1);
     for (size_t it = 0; it < limbs(); it++) {
       Limb self = masked_limb_with(it + outer_count, sign);
       Limb hi = masked_limb_with(it + outer_count + 1, sign);
       result.data()[it] = bitstring::shr(hi, self, inner_count);
     }
     return result;
+  }
+
+  template <class Self>
+  bool BitStringBase2<Self>::lt_u(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    for (size_t it = limbs(); it-- > 0;) {
+      Limb lhs = masked_limb_with(it, false);
+      Limb rhs = other.masked_limb_with(it, false);
+      if (lhs != rhs) {
+        return lhs < rhs;
+      }
+    }
+    return false;
+  }
+
+  template <class Self>
+  bool BitStringBase2<Self>::lt_s(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    if (width() == 0) {
+      return false;
+    }
+    bool lhs_sign = at(width() - 1);
+    bool rhs_sign = other.at(width() - 1);
+    if (lhs_sign != rhs_sign) {
+      return lhs_sign;
+    }
+    return lt_u(other);
   }
 
   template <class Self>
@@ -483,6 +636,41 @@ namespace bitstring {
     return result;
   }
 
+  template <class Self>
+  BitString2 BitStringBase2<Self>::operator-() const {
+    return BitString2::zeros(width()) - *this;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::slice(size_t offset, size_t width) const {
+    assert(offset + width <= this->width());
+    BitString2 result(width);
+    for (size_t it = 0; it < width; it++) {
+      result.set(it, at(offset + it));
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::reverse() const {
+    BitString2 result(width());
+    for (size_t it = 0; it < width(); it++) {
+      result.set(it, at(width() - 1 - it));
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString2 BitStringBase2<Self>::repeat(size_t count) const {
+    BitString2 result(width() * count);
+    for (size_t rep = 0; rep < count; rep++) {
+      for (size_t it = 0; it < width(); it++) {
+        result.set(rep * width() + it, at(it));
+      }
+    }
+    return result;
+  }
+
   class BitStringView2 final: public BitStringBase2<BitStringView2> {
   private:
     Limb* _data;
@@ -512,7 +700,19 @@ namespace bitstring {
     Z = 2,
     X = 3
   };
+}
 
+std::ostream& operator<<(std::ostream& stream, const bitstring::Bit4& value) {
+  switch (value) {
+    case bitstring::Bit4::Zero: stream << '0'; break;
+    case bitstring::Bit4::One: stream << '1'; break;
+    case bitstring::Bit4::Z: stream << 'z'; break;
+    case bitstring::Bit4::X: stream << 'x'; break;
+  }
+  return stream;
+}
+
+namespace bitstring {
   class BitString4;
 
   template <class Self>
@@ -520,27 +720,34 @@ namespace bitstring {
   private:
     always_inline ABVal<Limb*> data() { return static_cast<Self*>(this)->data(); }
     always_inline ABVal<const Limb*> data() const { return static_cast<const Self*>(this)->data(); }
-    always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
   public:
     BitStringBase4() {}
 
-    always_inline size_t limbs() const {
-      return (width() + 63) / 64;
-    }
+    always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
+    always_inline size_t limbs() const { return limbs_for_width(width()); }
 
     always_inline BitStringView2 a_val() { return BitStringView2(data().a, width()); }
     always_inline const BitStringView2 a_val() const { return BitStringView2(const_cast<Limb*>(data().a), width()); }
     always_inline BitStringView2 b_val() { return BitStringView2(data().b, width()); }
     always_inline const BitStringView2 b_val() const { return BitStringView2(const_cast<Limb*>(data().b), width()); }
 
-    bool operator==(const BitStringBase4& other) const {
+    template <class OtherSelf>
+    always_inline void copy_from(const BitStringBase4<OtherSelf>& other) {
+      assert(width() == other.width());
+      std::copy(other.data().a, other.data().a + limbs(), data().a);
+      std::copy(other.data().b, other.data().b + limbs(), data().b);
+    }
+
+    template <class OtherSelf>
+    bool operator==(const BitStringBase4<OtherSelf>& other) const {
       if (width() != other.width()) {
         return false;
       }
       return a_val() == other.a_val() && b_val() == other.b_val();
     }
 
-    bool operator!=(const BitStringBase4& other) const {
+    template <class OtherSelf>
+    bool operator!=(const BitStringBase4<OtherSelf>& other) const {
       return !(*this == other);
     }
 
@@ -563,10 +770,93 @@ namespace bitstring {
       }
     }
 
+    bool is_fully(Bit4 value) const {
+      switch (value) {
+        case Bit4::Zero: return a_val().is_fully(false) && b_val().is_fully(false);
+        case Bit4::One: return a_val().is_fully(true) && b_val().is_fully(false);
+        case Bit4::Z: return a_val().is_fully(false) && b_val().is_fully(true);
+        case Bit4::X: return a_val().is_fully(true) && b_val().is_fully(true);
+      }
+    }
+
+    template <class T>
+    std::optional<T> as_u_opt() const {
+      if (!b_val().any()) {
+        return a_val().template as_u_opt<T>();
+      }
+      return std::nullopt;
+    }
+
+    template <class T>
+    T as_u() const {
+      if (std::optional<T> result = as_u_opt<T>()) {
+        return *result;
+      }
+      std::ostringstream stream;
+      stream << "BitString ";
+      write(stream);
+      stream << " is not in range for unsigned integer type of size " << sizeof(T);
+      throw std::runtime_error(stream.str());
+    }
+
+    bool has_unknown() const {
+      return b_val().any();
+    }
+
+    void write_hex(std::ostream& stream) const {
+      stream << width() << "'h";
+      for (size_t it = width(); it-- > 0;) {
+        stream << "01zx"[(int) at(it)];
+      }
+    }
+
+    #define cmp(name, expr) \
+      Bit4 name(const BitStringBase4& other) const { \
+        if (b_val().any() || other.b_val().any()) { \
+          return Bit4::X; \
+        } \
+        return (expr) ? Bit4::One : Bit4::Zero; \
+      }
+
+    cmp(eq, a_val() == other.a_val())
+    cmp(lt_u, a_val().lt_u(other.a_val()))
+    cmp(lt_s, a_val().lt_s(other.a_val()))
+
+    #undef cmp
+
     always_inline BitString4 operator|(const BitStringBase4& other) const;
     always_inline BitString4 operator&(const BitStringBase4& other) const;
     always_inline BitString4 operator^(const BitStringBase4& other) const;
     always_inline BitString4 operator~() const;
+
+    always_inline BitString4 operator+(const BitStringBase4& other) const;
+    always_inline BitString4 operator-(const BitStringBase4& other) const;
+    always_inline BitString4 operator*(const BitStringBase4& other) const;
+    BitString4 operator-() const;
+
+    BitString4 shl(size_t count) const;
+    BitString4 shr_u(size_t count) const;
+    BitString4 shr_s(size_t count) const;
+
+    BitString4 shl(const BitStringBase4& count) const;
+    BitString4 shr_u(const BitStringBase4& count) const;
+    BitString4 shr_s(const BitStringBase4& count) const;
+
+    BitString4 slice(size_t offset, size_t width) const;
+    BitString4 reverse() const;
+    BitString4 repeat(size_t count) const;
+
+    std::string as_ascii() const {
+      size_t byte_count = (width() + 7) / 8;
+      std::string result;
+      result.reserve(byte_count);
+      for (size_t byte = byte_count; byte-- > 0;) {
+        size_t offset = byte * 8;
+        size_t byte_width = std::min<size_t>(8, width() - offset);
+        result.push_back(char(slice(offset, byte_width).template as_u<uint8_t>()));
+      }
+      return result;
+    }
 
     void write(std::ostream& stream) const {
       stream << width() << "'b";
@@ -606,9 +896,8 @@ namespace bitstring {
     }
 
     template <class T>
-    BitString4(const BitStringBase2<T>& other): _width(other.width()) {
-      std::copy(other.data(), other.data() + limbs(), data().a);
-      std::fill(data().b, data().b + limbs(), 0);
+    BitString4(const BitStringBase2<T>& other): BitString4(other.width()) {
+      a_val().copy_from(other);
     }
 
     BitString4(std::string_view string): _width(string.size()) {
@@ -655,6 +944,10 @@ namespace bitstring {
 
     BitString4& operator=(const BitString4& other) {
       if (this != &other) {
+        if (_width == other._width) {
+          copy_from(other);
+          return *this;
+        }
         this->~BitString4();
         new (this) BitString4(other);
       }
@@ -693,6 +986,35 @@ namespace bitstring {
       return fully(Bit4::One, width);
     }
 
+    static BitString4 from_bool(bool value) {
+      return BitString4(1, value ? 1 : 0);
+    }
+
+    static BitString4 random(size_t width) {
+      BitString4 result(width);
+      for (size_t it = 0; it < width; it++) {
+        result.set(it, rand() % 2 == 1 ? Bit4::One : Bit4::Zero);
+      }
+      return result;
+    }
+
+    static BitString4 mask_lower(size_t width, size_t lower_width) {
+      BitString4 result(width);
+      result.a_val().set(0, std::min(width, lower_width), true);
+      return result;
+    }
+
+    static BitString4 concat(const BitString4& high, const BitString4& low) {
+      BitString4 result(high.width() + low.width());
+      for (size_t it = 0; it < low.width(); it++) {
+        result.set(it, low.at(it));
+      }
+      for (size_t it = 0; it < high.width(); it++) {
+        result.set(low.width() + it, high.at(it));
+      }
+      return result;
+    }
+
     always_inline ABVal<const Limb*> data() const {
       if (_width <= 64) {
         return {&_data.small.a, &_data.small.b};
@@ -714,12 +1036,14 @@ namespace bitstring {
 
   class BitStringView4 final: public BitStringBase4<BitStringView4> {
   private:
-    ABVal<const Limb*> _data;
+    ABVal<Limb*> _data;
     size_t _width;
   public:
-    BitStringView4(ABVal<const Limb*> data, size_t width): _data(data), _width(width) {}
+    BitStringView4(ABVal<Limb*> data, size_t width): _data(data), _width(width) {}
+    BitStringView4(Limb* a, Limb* b, size_t width): _data({a, b}), _width(width) {}
     
-    always_inline ABVal<const Limb*> data() const { return _data; }
+    always_inline ABVal<Limb*> data() { return _data; }
+    always_inline ABVal<const Limb*> data() const { return ABVal<const Limb*>{_data.a, _data.b}; }
     always_inline size_t width() const { return _width; }
   };
 
@@ -772,6 +1096,81 @@ namespace bitstring {
     }
     return result;
   }
+
+  #define binop(name, expr) \
+    template <class Self> \
+    always_inline BitString4 BitStringBase4<Self>::name(const BitStringBase4& other) const { \
+      assert(width() == other.width()); \
+      if (b_val().any() || other.b_val().any()) { \
+        return BitString4::fully(Bit4::X, width()); \
+      } \
+      return BitString4(expr); \
+    }
+  
+  binop(operator+, a_val() + other.a_val())
+  binop(operator-, a_val() - other.a_val())
+  binop(operator*, a_val() * other.a_val())
+
+  #undef binop
+
+  #define shift(name) \
+    template <class Self> \
+    BitString4 BitStringBase4<Self>::name(size_t count) const { \
+      BitString4 result(width()); \
+      result.a_val().copy_from(a_val().name(count)); \
+      result.b_val().copy_from(b_val().name(count)); \
+      return result; \
+    } \
+    \
+    template <class Self> \
+    BitString4 BitStringBase4<Self>::name(const BitStringBase4& count) const { \
+      if (count.b_val().any()) { \
+        return BitString4::fully(Bit4::X, width()); \
+      } \
+      return name(count.template as_u_opt<size_t>().value_or(width())); \
+    }
+
+  shift(shl)
+  shift(shr_u)
+  shift(shr_s)
+
+  #undef shift
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::operator-() const {
+    return BitString4::zeros(width()) - *this;
+  }
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::slice(size_t offset, size_t width) const {
+    assert(offset + width <= this->width());
+    BitString4 result(width);
+    for (size_t it = 0; it < width; it++) {
+      result.set(it, at(offset + it));
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::reverse() const {
+    BitString4 result(width());
+    for (size_t it = 0; it < width(); it++) {
+      result.set(it, at(width() - 1 - it));
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::repeat(size_t count) const {
+    BitString4 result(width() * count);
+    for (size_t rep = 0; rep < count; rep++) {
+      for (size_t it = 0; it < width(); it++) {
+        result.set(rep * width() + it, at(it));
+      }
+    }
+    return result;
+  }
+
 }
 
 template <class Self>
