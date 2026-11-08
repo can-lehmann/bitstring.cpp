@@ -226,6 +226,9 @@ namespace bitstring {
     BitString2 shr_u(size_t count) const;
     BitString2 shr_s(size_t count) const;
 
+    bool lt_u(const BitStringBase2& other) const;
+    bool lt_s(const BitStringBase2& other) const;
+
     BitString2 operator+(const BitStringBase2& other) const;
     BitString2 operator-(const BitStringBase2& other) const;
     BitString2 operator*(const BitStringBase2& other) const;
@@ -440,6 +443,33 @@ namespace bitstring {
   }
 
   template <class Self>
+  bool BitStringBase2<Self>::lt_u(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    for (size_t it = limbs(); it-- > 0;) {
+      Limb lhs = masked_limb_with(it, false);
+      Limb rhs = other.masked_limb_with(it, false);
+      if (lhs != rhs) {
+        return lhs < rhs;
+      }
+    }
+    return false;
+  }
+
+  template <class Self>
+  bool BitStringBase2<Self>::lt_s(const BitStringBase2& other) const {
+    assert(width() == other.width());
+    if (width() == 0) {
+      return false;
+    }
+    bool lhs_sign = at(width() - 1);
+    bool rhs_sign = other.at(width() - 1);
+    if (lhs_sign != rhs_sign) {
+      return lhs_sign;
+    }
+    return lt_u(other);
+  }
+
+  template <class Self>
   BitString2 BitStringBase2<Self>::operator+(const BitStringBase2& other) const {
     assert(width() == other.width());
     BitString2 result(width());
@@ -562,6 +592,20 @@ namespace bitstring {
         case Bit4::X: a_val().set(index, true); b_val().set(index, true); break;
       }
     }
+
+    #define cmp(name, expr) \
+      Bit4 name(const BitStringBase4& other) const { \
+        if (b_val().any() || other.b_val().any()) { \
+          return Bit4::X; \
+        } \
+        return (expr) ? Bit4::One : Bit4::Zero; \
+      }
+
+    cmp(eq, a_val() == other.a_val())
+    cmp(lt_u, a_val().lt_u(other.a_val()))
+    cmp(lt_s, a_val().lt_s(other.a_val()))
+
+    #undef cmp
 
     always_inline BitString4 operator|(const BitStringBase4& other) const;
     always_inline BitString4 operator&(const BitStringBase4& other) const;

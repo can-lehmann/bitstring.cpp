@@ -208,6 +208,32 @@ int main(int argc, char** argv) {
     unittest_assert(BitString2(65, 0b1).shl(64).shr_s(62) == BitString2::ones(65).shl(2));
   });
 
+  suite.test("lt_u").run([]() {
+    unittest_assert(BitString2(5, 0b00001).lt_u(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(5, 0b00010).lt_u(BitString2(5, 0b00001)));
+    unittest_assert(!BitString2(5, 0b10101).lt_u(BitString2(5, 0b10101)));
+    unittest_assert(BitString2(5, 0b00001).lt_u(BitString2(5, 0b10000)));
+    unittest_assert(!BitString2(0).lt_u(BitString2(0)));
+    unittest_assert(BitString2(128, 1).lt_u(BitString2(128, 1).shl(100)));
+    unittest_assert(!BitString2(128, 1).shl(100).lt_u(BitString2(128, 1)));
+    unittest_assert(BitString2(128, 1).shl(100).lt_u(BitString2::ones(128)));
+    unittest_assert(!BitString2::ones(128).lt_u(BitString2::ones(128)));
+  });
+
+  suite.test("lt_s").run([]() {
+    unittest_assert(BitString2(5, 0b10000).lt_s(BitString2(5, 0b00001)));
+    unittest_assert(!BitString2(5, 0b00001).lt_s(BitString2(5, 0b10000)));
+    unittest_assert(BitString2(5, 0b11111).lt_s(BitString2(5, 0b00000)));
+    unittest_assert(BitString2(5, 0b10000).lt_s(BitString2(5, 0b11111)));
+    unittest_assert(BitString2(5, 0b00001).lt_s(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(5, 0b00010).lt_s(BitString2(5, 0b00010)));
+    unittest_assert(!BitString2(0).lt_s(BitString2(0)));
+    unittest_assert(BitString2::ones(128).lt_s(BitString2(128, 0)));
+    unittest_assert(!BitString2(128, 0).lt_s(BitString2::ones(128)));
+    unittest_assert(BitString2(128, 1).shl(127).lt_s(BitString2(128, 1)));
+    unittest_assert(BitString2(128, 1).shl(127).lt_s(BitString2::ones(128)));
+  });
+
   suite.test("operator+").run([]() {
     unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b01010)).to_string() == "5'b11111");
     unittest_assert((BitString2(5, 0b10101) + BitString2(5, 0b00000)).to_string() == "5'b10101");
