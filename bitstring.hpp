@@ -494,16 +494,31 @@ namespace bitstring {
     always_inline Limb* data() { return _data; }
     always_inline size_t width() const { return _width; }
   };
-
+  
+  // a b state
+  // 0 0 0
+  // 1 0 1
+  // 0 1 z
+  // 1 1 x
   template <class T>
   struct ABVal {
     T a;
     T b;
   };
 
+  enum class Bit4 {
+    Zero = 0,
+    One = 1,
+    Z = 2,
+    X = 3
+  };
+
+  class BitString4;
+
   template <class Self>
   class BitStringBase4 {
   private:
+    always_inline ABVal<Limb*> data() { return static_cast<Self*>(this)->data(); }
     always_inline ABVal<const Limb*> data() const { return static_cast<const Self*>(this)->data(); }
     always_inline size_t width() const { return static_cast<const Self*>(this)->width(); }
   public:
@@ -513,35 +528,57 @@ namespace bitstring {
       return (width() + 63) / 64;
     }
 
-    always_inline BitStringView2 a_val() const {
-      return BitStringView2(data().a, width());
-    }
-
-    always_inline BitStringView2 b_val() const {
-      return BitStringView2(data().b, width());
-    }
+    always_inline BitStringView2 a_val() { return BitStringView2(data().a, width()); }
+    always_inline const BitStringView2 a_val() const { return BitStringView2(const_cast<Limb*>(data().a), width()); }
+    always_inline BitStringView2 b_val() { return BitStringView2(data().b, width()); }
+    always_inline const BitStringView2 b_val() const { return BitStringView2(const_cast<Limb*>(data().b), width()); }
 
     bool operator==(const BitStringBase4& other) const {
       if (width() != other.width()) {
         return false;
       }
-      for (size_t i = 0; i < limbs(); i++) {
-        if (data().a[i] != other.data().a[i]) {
-          return false;
-        }
-        if (data().b[i] != other.data().b[i]) {
-          return false;
-        }
-      }
-      return true;
+      return a_val() == other.a_val() && b_val() == other.b_val();
     }
 
     bool operator!=(const BitStringBase4& other) const {
       return !(*this == other);
     }
 
+    Bit4 at(size_t index) const {
+      assert(index < width());
+      if (b_val().at(index)) {
+        return a_val().at(index) ? Bit4::X : Bit4::Z;
+      } else {
+        return a_val().at(index) ? Bit4::One : Bit4::Zero;
+      }
+    }
+
+    void set(size_t index, Bit4 value) {
+      assert(index < width());
+      switch (value) {
+        case Bit4::Zero: a_val().set(index, false); b_val().set(index, false); break;
+        case Bit4::One: a_val().set(index, true); b_val().set(index, false); break;
+        case Bit4::Z: a_val().set(index, false); b_val().set(index, true); break;
+        case Bit4::X: a_val().set(index, true); b_val().set(index, true); break;
+      }
+    }
+
+    always_inline BitString4 operator|(const BitStringBase4& other) const;
+    always_inline BitString4 operator&(const BitStringBase4& other) const;
+    always_inline BitString4 operator^(const BitStringBase4& other) const;
+    always_inline BitString4 operator~() const;
+
     void write(std::ostream& stream) const {
-      // TODO
+      stream << width() << "'b";
+      size_t it = width();
+      while (it-- > 0) {
+        switch (at(it)) {
+          case Bit4::Zero: stream << '0'; break;
+          case Bit4::One: stream << '1'; break;
+          case Bit4::Z: stream << 'z'; break;
+          case Bit4::X: stream << 'x'; break;
+        }
+      }
     }
   };
 
@@ -559,6 +596,34 @@ namespace bitstring {
         _data.small = {0, 0};
       } else {
         _data.ptr = {new Limb[limbs()](), new Limb[limbs()]()};
+      }
+    }
+
+    BitString4(size_t width, Limb value): BitString4(width) {
+      _Static_assert(sizeof(Limb) == sizeof(uint64_t), "Limb size must be 64 bits");
+      data().a[0] = value;
+      data().b[0] = 0;
+    }
+
+    template <class T>
+    BitString4(const BitStringBase2<T>& other): _width(other.width()) {
+      std::copy(other.data(), other.data() + limbs(), data().a);
+      std::fill(data().b, data().b + limbs(), 0);
+    }
+
+    BitString4(std::string_view string): _width(string.size()) {
+      for (size_t it = 0; it < string.size(); it++) {
+        char chr = string[string.size() - 1 - it];
+        switch (chr) {
+          case '0': set(it, Bit4::Zero); break;
+          case '1': set(it, Bit4::One); break;
+          case 'z': 
+          case 'Z': set(it, Bit4::Z); break;
+          case 'x':
+          case 'X': set(it, Bit4::X); break;
+          default:
+            throw std::invalid_argument("Invalid character in bitstring");
+        }
       }
     }
 
@@ -604,7 +669,39 @@ namespace bitstring {
       return *this;
     }
 
+    static BitString4 zeros(size_t width) {
+      return BitString4(width);
+    }
+
+    static BitString4 fully(Bit4 value, size_t width) {
+      BitString4 result(width);
+      Limb a = 0, b = 0;
+      switch (value) {
+        case Bit4::Zero: a = 0; b = 0; break;
+        case Bit4::One: a = ~(Limb)0; b = 0; break;
+        case Bit4::Z: a = 0; b = ~(Limb)0; break;
+        case Bit4::X: a = ~(Limb)0; b = ~(Limb)0; break;
+      }
+      for (size_t it = 0; it < result.limbs(); it++) {
+        result.data().a[it] = a;
+        result.data().b[it] = b;
+      }
+      return result;
+    }
+
+    static BitString4 ones(size_t width) {
+      return fully(Bit4::One, width);
+    }
+
     always_inline ABVal<const Limb*> data() const {
+      if (_width <= 64) {
+        return {&_data.small.a, &_data.small.b};
+      } else {
+        return {_data.ptr.a, _data.ptr.b};
+      }
+    }
+
+    always_inline ABVal<Limb*> data() {
       if (_width <= 64) {
         return {&_data.small.a, &_data.small.b};
       } else {
@@ -625,6 +722,56 @@ namespace bitstring {
     always_inline ABVal<const Limb*> data() const { return _data; }
     always_inline size_t width() const { return _width; }
   };
+
+  template <class Self>
+  always_inline BitString4 BitStringBase4<Self>::operator|(const BitStringBase4& other) const {
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb res_b = (
+        (data().b[it] & (~other.data().a[it] | other.data().b[it])) | 
+        (other.data().b[it] & (~data().a[it] | data().b[it]))
+      );
+      result.data().a[it] = data().a[it] | other.data().a[it] | res_b;
+      result.data().b[it] = res_b;
+    }
+    return result;
+  }
+
+  template <class Self>
+  always_inline BitString4 BitStringBase4<Self>::operator&(const BitStringBase4& other) const {
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb res_b = (
+        (data().b[it] | other.data().b[it]) &
+        (data().a[it] | data().b[it]) &
+        (other.data().a[it] | other.data().b[it])
+      );
+      result.data().a[it] = (data().a[it] & other.data().a[it]) | res_b;
+      result.data().b[it] = res_b;
+    }
+    return result;
+  }
+
+  template <class Self>
+  always_inline BitString4 BitStringBase4<Self>::operator^(const BitStringBase4& other) const {
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb res_b = (data().b[it] | other.data().b[it]);
+      result.data().a[it] = (data().a[it] ^ other.data().a[it]) | res_b;
+      result.data().b[it] = res_b;
+    }
+    return result;
+  }
+
+  template <class Self>
+  always_inline BitString4 BitStringBase4<Self>::operator~() const {
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      result.data().a[it] = ~data().a[it] | data().b[it];
+      result.data().b[it] = data().b[it];
+    }
+    return result;
+  }
 }
 
 template <class Self>
