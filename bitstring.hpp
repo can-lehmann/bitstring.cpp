@@ -340,6 +340,10 @@ namespace bitstring {
 
     BitString2& operator=(const BitString2& other) {
       if (this != &other) {
+        if (_width == other._width) {
+          copy_from(other);
+          return *this;
+        }
         this->~BitString2();
         new (this) BitString2(other);
       }
@@ -784,6 +788,10 @@ namespace bitstring {
 
     BitString4& operator=(const BitString4& other) {
       if (this != &other) {
+        if (_width == other._width) {
+          copy_from(other);
+          return *this;
+        }
         this->~BitString4();
         new (this) BitString4(other);
       }
