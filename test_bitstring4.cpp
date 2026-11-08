@@ -27,5 +27,17 @@ int main(int argc, char** argv) {
     unittest_assert(a == b);
   });
 
+  suite.test("operator~").run([]() {
+    unittest_assert(~BitString4("01xz") == BitString4("10xx"));
+  });
+
+  suite.test("operator|").run([]() {
+    unittest_assert((BitString4("01xz01xz01xz01xz") | BitString4("00001111xxxxzzzz")) == BitString4("01xx1111x1xxx1xx"));
+  });
+
+  suite.test("operator&").run([]() {
+    unittest_assert((BitString4("01xz01xz01xz01xz") & BitString4("00001111xxxxzzzz")) == BitString4("000001xx0xxx0xxx"));
+  });
+
   return suite.finish();
 }
