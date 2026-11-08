@@ -75,5 +75,80 @@ int main(int argc, char** argv) {
     unittest_assert(BitString4::ones(100).lt_s(BitString4(100)) == Bit4::One);
   });
 
+  suite.test("from_bool").run([]() {
+    unittest_assert(BitString4::from_bool(true) == BitString4("1"));
+    unittest_assert(BitString4::from_bool(false) == BitString4("0"));
+  });
+
+  suite.test("random").run([]() {
+    unittest_assert(BitString4::random(0).width() == 0);
+    BitString4 value = BitString4::random(100);
+    unittest_assert(value.width() == 100);
+    unittest_assert(!value.has_unknown());
+  });
+
+  suite.test("mask_lower").run([]() {
+    unittest_assert(BitString4::mask_lower(5, 3) == BitString4("00111"));
+    unittest_assert(BitString4::mask_lower(5, 0) == BitString4("00000"));
+    unittest_assert(BitString4::mask_lower(5, 9) == BitString4("11111"));
+    unittest_assert(BitString4::mask_lower(128, 128) == BitString4::ones(128));
+  });
+
+  suite.test("concat").run([]() {
+    unittest_assert(BitString4::concat(BitString4("1x"), BitString4("0z1")) == BitString4("1x0z1"));
+    unittest_assert(BitString4::concat(BitString4::ones(70), BitString4(60)).slice(60, 70) == BitString4::ones(70));
+    unittest_assert(BitString4::concat(BitString4(0), BitString4(0)).width() == 0);
+  });
+
+  suite.test("slice").run([]() {
+    unittest_assert(BitString4("1x0z1101").slice(2, 4) == BitString4("0z11"));
+    unittest_assert(BitString4("1x0z").slice(0, 4) == BitString4("1x0z"));
+    unittest_assert(BitString4("1x0z").slice(1, 0).width() == 0);
+  });
+
+  suite.test("reverse").run([]() {
+    unittest_assert(BitString4("1x0z").reverse() == BitString4("z0x1"));
+  });
+
+  suite.test("repeat").run([]() {
+    unittest_assert(BitString4("1xz").repeat(2) == BitString4("1xz1xz"));
+    unittest_assert(BitString4("1xz").repeat(0).width() == 0);
+  });
+
+  suite.test("as_ascii").run([]() {
+    unittest_assert(BitString4(16, 0x4142).as_ascii() == "AB");
+    unittest_assert(BitString4(0).as_ascii() == "");
+  });
+
+  suite.test("as_u").run([]() {
+    unittest_assert(BitString4(8, 200).as_u<uint8_t>() == 200);
+    unittest_assert(BitString4(100, 1234).as_u<uint64_t>() == 1234);
+    bool thrown = false;
+    try {
+      BitString4("01x").as_u<uint8_t>();
+    } catch (const std::runtime_error&) {
+      thrown = true;
+    }
+    unittest_assert(thrown);
+  });
+
+  suite.test("has_unknown").run([]() {
+    unittest_assert(!BitString4("0101").has_unknown());
+    unittest_assert(BitString4("01x1").has_unknown());
+    unittest_assert(BitString4("z101").has_unknown());
+  });
+
+  suite.test("unary operator-").run([]() {
+    unittest_assert(-BitString4("00001") == BitString4("11111"));
+    unittest_assert(-BitString4("00000") == BitString4("00000"));
+    unittest_assert(-BitString4("00x01") == BitString4::fully(Bit4::X, 5));
+  });
+
+  suite.test("write_hex").run([]() {
+    std::ostringstream stream;
+    BitString4("01zx").write_hex(stream);
+    unittest_assert(stream.str() == "4'h01zx");
+  });
+
   return suite.finish();
 }
