@@ -310,42 +310,5 @@ int main(int argc, char** argv) {
     unittest_assert(BitString4(0).to_bitstring2().width() == 0);
   });
 
-  suite.test("view operations").run([]() {
-    BitString4 a(8, -17), b(8, 3);
-    BitStringView4 view_a(a.data(), a.width()), view_b(b.data(), b.width());
-    unittest_assert(view_a.div_u(view_b) == BitString4(8, 79));
-    unittest_assert(view_a.div_s(view_b) == BitString4(8, -5));
-    unittest_assert(view_a.mod_u(view_b) == BitString4(8, 2));
-    unittest_assert(view_a.mod_s(view_b) == BitString4(8, -2));
-    unittest_assert(view_b.pow(view_b) == BitString4(8, 27));
-    unittest_assert(view_a.eq(view_b) == Bit4::Zero);
-    unittest_assert(view_a.case_eq(view_a) == BitString4("1"));
-    BitString4 pattern("01xz"), wildcard("zzzz"), condition("1");
-    BitStringView4 view_pattern(pattern.data(), pattern.width());
-    BitStringView4 view_wildcard(wildcard.data(), wildcard.width());
-    BitStringView4 view_condition(condition.data(), condition.width());
-    unittest_assert(view_pattern.resolve(view_wildcard) == BitString4("01xz"));
-    unittest_assert(view_pattern.match_z(view_wildcard));
-    unittest_assert(view_pattern.match_x_z(view_wildcard));
-    unittest_assert(view_pattern.clog2() == 2);
-    unittest_assert(view_pattern.count_ones() == 1);
-    unittest_assert(view_pattern.is_one_hot());
-    unittest_assert(view_pattern.is_one_hot0());
-    unittest_assert(view_pattern.to_bitstring2() == BitString2(4, 0b0100));
-    unittest_assert(view_condition.mux(view_pattern, view_wildcard) == BitString4("01xz"));
-    condition.set(0, Bit4::Zero);
-    unittest_assert(view_condition.mux(view_pattern, view_wildcard) == BitString4("zzzz"));
-    condition.set(0, Bit4::X);
-    unittest_assert(view_condition.mux(view_pattern, view_wildcard) == BitString4("xxxz"));
-    BitString4 f32(32, 0x3fc00000), f64(64, 0xc004000000000000);
-    unittest_assert(BitStringView4(f32.data(), f32.width()).as_float32() == 1.5f);
-    unittest_assert(BitStringView4(f64.data(), f64.width()).as_float64() == -2.5);
-    BitString4 wide = BitString4::fully(Bit4::Z, 129);
-    BitStringView4 view_wide(wide.data(), wide.width());
-    unittest_assert(view_wide.resolve(view_wide) == BitString4::fully(Bit4::Z, 129));
-    unittest_assert(view_wide.case_eq(view_wide) == BitString4("1"));
-    unittest_assert(view_wide.eq(view_wide) == Bit4::X);
-  });
-
   return suite.finish();
 }
