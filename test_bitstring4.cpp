@@ -27,6 +27,9 @@ int main(int argc, char** argv) {
     unittest_assert(a == b);
     unittest_assert(BitString4("").width() == 0);
     unittest_assert(BitString4(std::string(129, 'z')) == BitString4::fully(Bit4::Z, 129));
+    unittest_assert(BitString4(std::vector<Bit4>{Bit4::Zero, Bit4::One, Bit4::X, Bit4::Z}) == BitString4("zx10"));
+    unittest_assert(BitString4(std::vector<Bit4>()).width() == 0);
+    unittest_assert(BitString4(std::vector<Bit4>(129, Bit4::Z)) == BitString4::fully(Bit4::Z, 129));
   });
 
   suite.test("operator~").run([]() {
@@ -159,12 +162,6 @@ int main(int argc, char** argv) {
     std::ostringstream stream;
     BitString4("01zx").write_hex(stream);
     unittest_assert(stream.str() == "4'h01zx");
-  });
-
-  suite.test("vector constructor").run([]() {
-    unittest_assert(BitString4(std::vector<Bit4>{Bit4::Zero, Bit4::One, Bit4::X, Bit4::Z}) == BitString4("zx10"));
-    unittest_assert(BitString4(std::vector<Bit4>()).width() == 0);
-    unittest_assert(BitString4(std::vector<Bit4>(129, Bit4::Z)) == BitString4::fully(Bit4::Z, 129));
   });
 
   suite.test("resolve").run([]() {
