@@ -379,5 +379,22 @@ int main(int argc, char** argv) {
     unittest_assert(mask_between(1, LIMB_WIDTH - 1) == (~Limb(0) ^ 1 ^ (Limb(1) << (LIMB_WIDTH - 1))));
   });
 
+  suite.test("vector constructor").run([]() {
+    unittest_assert(BitString2(std::vector<bool>{true, false, true, true}) == BitString2(4, 0b1101));
+    unittest_assert(BitString2(std::vector<bool>()).width() == 0);
+    unittest_assert(BitString2(std::vector<bool>(129, true)) == BitString2::ones(129));
+  });
+
+  suite.test("utils/sign_extend").run([]() {
+    unittest_assert(sign_extend(0, 0) == 0);
+    unittest_assert(sign_extend(0, 1) == 0);
+    unittest_assert(sign_extend(1, 1) == -1);
+    unittest_assert(sign_extend(0b0111, 4) == 7);
+    unittest_assert(sign_extend(0b1000, 4) == -8);
+    unittest_assert(sign_extend(0b1111, 4) == -1);
+    unittest_assert(sign_extend(uint64_t(1) << 63, 64) == INT64_MIN);
+    unittest_assert(sign_extend(UINT64_MAX, 64) == -1);
+  });
+
   return suite.finish();
 }

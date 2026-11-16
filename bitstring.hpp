@@ -28,6 +28,17 @@
 #define always_inline inline __attribute__((always_inline))
 
 namespace bitstring {
+  inline int64_t sign_extend(uint64_t value, size_t width) {
+    if (width >= 64) {
+      return (int64_t) value;
+    }
+    if (width == 0) {
+      return 0;
+    }
+    uint64_t sign_bit = uint64_t(1) << (width - 1);
+    return (int64_t) ((value ^ sign_bit) - sign_bit);
+  }
+
   using Limb = uint64_t;
   static constexpr size_t LIMB_WIDTH = sizeof(Limb) * 8;
 
@@ -429,6 +440,12 @@ namespace bitstring {
 
     always_inline size_t width() const { return _width; }
 
+    BitString2(const std::vector<bool>& bits): BitString2(bits.size()) {
+      for (size_t it = 0; it < bits.size(); it++) {
+        set(it, bits[it]);
+      }
+    }
+
     static BitString2 zeros(size_t width) {
       return BitString2(width);
     }
@@ -718,6 +735,8 @@ namespace bitstring {
   template <class Self>
   class BitStringBase4 {
   private:
+    template <class> friend class BitStringBase4;
+
     always_inline ABVal<Limb*> data() { return static_cast<Self*>(this)->data(); }
     always_inline ABVal<const Limb*> data() const { return static_cast<const Self*>(this)->data(); }
   public:
@@ -818,11 +837,116 @@ namespace bitstring {
         return (expr) ? Bit4::One : Bit4::Zero; \
       }
 
-    cmp(eq, a_val() == other.a_val())
+    Bit4 eq(const BitStringBase4& other) const {
+      assert(width() == other.width());
+      bool any_unknown = false;
+      for (size_t it = 0; it < limbs(); it++) {
+        Limb mask = it + 1 == limbs() ? a_val().upper_mask() : ~(Limb)0;
+        Limb unknown = (data().b[it] | other.data().b[it]) & mask;
+        if (((data().a[it] ^ other.data().a[it]) & ~unknown & mask) != 0) {
+          return Bit4::Zero;
+        }
+        any_unknown |= unknown != 0;
+      }
+      return any_unknown ? Bit4::X : Bit4::One;
+    }
+
     cmp(lt_u, a_val().lt_u(other.a_val()))
     cmp(lt_s, a_val().lt_s(other.a_val()))
 
     #undef cmp
+
+    BitString4 resolve(const BitStringBase4& other) const;
+
+    float as_float32() const {
+      assert(width() == 32);
+      uint32_t value = as_u<uint32_t>();
+      return *(float*) &value;
+    }
+
+    double as_float64() const {
+      assert(width() == 64);
+      uint64_t value = as_u<uint64_t>();
+      return *(double*) &value;
+    }
+
+    bool match_z(const BitStringBase4& other) const {
+      if (width() != other.width()) {
+        return false;
+      }
+      for (size_t i = 0; i < width(); i++) {
+        Bit4 mask_bit = other.at(i);
+        if (mask_bit != Bit4::Z && at(i) != mask_bit) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    bool match_x_z(const BitStringBase4& other) const {
+      if (width() != other.width()) {
+        return false;
+      }
+      for (size_t i = 0; i < width(); i++) {
+        Bit4 mask_bit = other.at(i);
+        if (mask_bit != Bit4::X && mask_bit != Bit4::Z && at(i) != mask_bit) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    size_t clog2() const {
+      size_t result = 0;
+      size_t it = width();
+      while (it > 0) {
+        it--;
+        if (at(it) == Bit4::One) {
+          result = it;
+          break;
+        }
+      }
+      while (it > 0) {
+        it--;
+        if (at(it) == Bit4::One) {
+          result++;
+          break;
+        }
+      }
+      return result;
+    }
+
+    size_t count_ones() const {
+      size_t count = 0;
+      for (size_t it = 0; it < width(); it++) {
+        if (at(it) == Bit4::One) {
+          count++;
+        }
+      }
+      return count;
+    }
+
+    bool is_one_hot() const {
+      return count_ones() == 1;
+    }
+
+    bool is_one_hot0() const {
+      return count_ones() <= 1;
+    }
+
+    BitString4 case_eq(const BitStringBase4& other) const;
+    BitString4 div_u(const BitStringBase4& other) const;
+    BitString4 div_s(const BitStringBase4& other) const;
+    BitString4 mod_u(const BitStringBase4& other) const;
+    BitString4 mod_s(const BitStringBase4& other) const;
+    BitString4 pow(const BitStringBase4& exponent) const;
+    BitString4 mux(const BitStringBase4& a, const BitStringBase4& b) const;
+
+    BitString2 to_bitstring2() const {
+      BitString2 result(width());
+      result.copy_from(a_val());
+      return result & ~b_val();
+    }
 
     always_inline BitString4 operator|(const BitStringBase4& other) const;
     always_inline BitString4 operator&(const BitStringBase4& other) const;
@@ -900,7 +1024,7 @@ namespace bitstring {
       a_val().copy_from(other);
     }
 
-    BitString4(std::string_view string): _width(string.size()) {
+    BitString4(std::string_view string): BitString4(string.size()) {
       for (size_t it = 0; it < string.size(); it++) {
         char chr = string[string.size() - 1 - it];
         switch (chr) {
@@ -960,6 +1084,12 @@ namespace bitstring {
         new (this) BitString4(std::move(other));
       }
       return *this;
+    }
+
+    BitString4(const std::vector<Bit4>& bits): BitString4(bits.size()) {
+      for (size_t it = 0; it < bits.size(); it++) {
+        set(it, bits[it]);
+      }
     }
 
     static BitString4 zeros(size_t width) {
@@ -1046,6 +1176,93 @@ namespace bitstring {
     always_inline ABVal<const Limb*> data() const { return ABVal<const Limb*>{_data.a, _data.b}; }
     always_inline size_t width() const { return _width; }
   };
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::resolve(const BitStringBase4& other) const {
+    assert(width() == other.width());
+    BitString4 result(width(), 0);
+    for (size_t it = 0; it < width(); it++) {
+      Bit4 a = at(it);
+      Bit4 b = other.at(it);
+      if (a == Bit4::Z) {
+        result.set(it, b);
+      } else if (b == Bit4::Z || a == b) {
+        result.set(it, a);
+      } else {
+        result.set(it, Bit4::X);
+      }
+    }
+    return result;
+  }
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::case_eq(const BitStringBase4& other) const {
+    assert(width() == other.width());
+    return BitString4::from_bool(*this == other);
+  }
+
+  #define binop(name, invalid, ...) \
+    template <class Self> \
+    BitString4 BitStringBase4<Self>::name(const BitStringBase4& other) const { \
+      assert(width() <= 64); \
+      std::optional<uint64_t> a = as_u_opt<uint64_t>(); \
+      std::optional<uint64_t> b = other.template as_u_opt<uint64_t>(); \
+      if (!a || !b || (invalid)) { \
+        return BitString4::fully(Bit4::X, width()); \
+      } \
+      uint64_t result; \
+      __VA_ARGS__ \
+      return BitString4(width(), result); \
+    }
+
+  binop(div_u, *b == 0, result = *a / *b;)
+  binop(mod_u, *b == 0, result = *a % *b;)
+
+  binop(div_s, *b == 0,
+    int64_t dividend = sign_extend(*a, width());
+    int64_t divisor = sign_extend(*b, other.width());
+    result = dividend == INT64_MIN && divisor == -1 ? dividend : dividend / divisor;
+  )
+
+  binop(mod_s, *b == 0,
+    int64_t dividend = sign_extend(*a, width());
+    int64_t divisor = sign_extend(*b, other.width());
+    result = dividend == INT64_MIN && divisor == -1 ? 0 : dividend % divisor;
+  )
+
+  binop(pow, false,
+    result = 1;
+    uint64_t factor = *a;
+    uint64_t exponent = *b;
+    while (exponent != 0) {
+      if ((exponent & 1) != 0) {
+        result *= factor;
+      }
+      factor *= factor;
+      exponent >>= 1;
+    }
+  )
+
+  #undef binop
+
+  template <class Self>
+  BitString4 BitStringBase4<Self>::mux(const BitStringBase4& a, const BitStringBase4& b) const {
+    assert(width() == 1);
+    assert(a.width() == b.width());
+    BitString4 result(a.width());
+    if (at(0) == Bit4::One) {
+      result.copy_from(a);
+      return result;
+    }
+    if (at(0) == Bit4::Zero) {
+      result.copy_from(b);
+      return result;
+    }
+    for (size_t it = 0; it < a.width(); it++) {
+      result.set(it, a.at(it) == b.at(it) ? a.at(it) : Bit4::X);
+    }
+    return result;
+  }
 
   template <class Self>
   always_inline BitString4 BitStringBase4<Self>::operator|(const BitStringBase4& other) const {
