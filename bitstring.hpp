@@ -870,47 +870,41 @@ namespace bitstring {
       return *(double*) &value;
     }
 
-    bool match_z(const BitStringBase4& other) const {
-      if (width() != other.width()) {
-        return false;
+    #define match(name, wildcard) \
+      bool name(const BitStringBase4& other) const { \
+        if (width() != other.width()) { \
+          return false; \
+        } \
+        for (size_t it = 0; it < limbs(); it++) { \
+          Limb mask = it + 1 == limbs() ? a_val().upper_mask() : ~(Limb)0; \
+          Limb diff = (data().a[it] ^ other.data().a[it]) | (data().b[it] ^ other.data().b[it]); \
+          if ((diff & ~(wildcard) & mask) != 0) { \
+            return false; \
+          } \
+        } \
+        return true; \
       }
-      for (size_t i = 0; i < width(); i++) {
-        Bit4 mask_bit = other.at(i);
-        if (mask_bit != Bit4::Z && at(i) != mask_bit) {
-          return false;
-        }
-      }
-      return true;
-    }
 
-    bool match_x_z(const BitStringBase4& other) const {
-      if (width() != other.width()) {
-        return false;
-      }
-      for (size_t i = 0; i < width(); i++) {
-        Bit4 mask_bit = other.at(i);
-        if (mask_bit != Bit4::X && mask_bit != Bit4::Z && at(i) != mask_bit) {
-          return false;
-        }
-      }
-      return true;
-    }
+    match(match_z, ~other.data().a[it] & other.data().b[it])
+    match(match_x_z, other.data().b[it])
+
+    #undef match
 
     size_t clog2() const {
       size_t result = 0;
-      size_t it = width();
-      while (it > 0) {
-        it--;
-        if (at(it) == Bit4::One) {
-          result = it;
-          break;
-        }
-      }
-      while (it > 0) {
-        it--;
-        if (at(it) == Bit4::One) {
-          result++;
-          break;
+      bool found = false;
+      for (size_t it = limbs(); it-- > 0;) {
+        Limb mask = it + 1 == limbs() ? a_val().upper_mask() : ~(Limb)0;
+        Limb ones = data().a[it] & ~data().b[it] & mask;
+        if (ones != 0) {
+          if (found) {
+            return result + 1;
+          }
+          result = it * LIMB_WIDTH + LIMB_WIDTH - 1 - __builtin_clzll(ones);
+          if ((ones & (ones - 1)) != 0) {
+            return result + 1;
+          }
+          found = true;
         }
       }
       return result;
@@ -918,10 +912,9 @@ namespace bitstring {
 
     size_t count_ones() const {
       size_t count = 0;
-      for (size_t it = 0; it < width(); it++) {
-        if (at(it) == Bit4::One) {
-          count++;
-        }
+      for (size_t it = 0; it < limbs(); it++) {
+        Limb mask = it + 1 == limbs() ? a_val().upper_mask() : ~(Limb)0;
+        count += __builtin_popcountll(data().a[it] & ~data().b[it] & mask);
       }
       return count;
     }
@@ -944,8 +937,10 @@ namespace bitstring {
 
     BitString2 to_bitstring2() const {
       BitString2 result(width());
-      result.copy_from(a_val());
-      return result & ~b_val();
+      for (size_t it = 0; it < limbs(); it++) {
+        result.data()[it] = data().a[it] & ~data().b[it];
+      }
+      return result;
     }
 
     always_inline BitString4 operator|(const BitStringBase4& other) const;
@@ -1180,17 +1175,13 @@ namespace bitstring {
   template <class Self>
   BitString4 BitStringBase4<Self>::resolve(const BitStringBase4& other) const {
     assert(width() == other.width());
-    BitString4 result(width(), 0);
-    for (size_t it = 0; it < width(); it++) {
-      Bit4 a = at(it);
-      Bit4 b = other.at(it);
-      if (a == Bit4::Z) {
-        result.set(it, b);
-      } else if (b == Bit4::Z || a == b) {
-        result.set(it, a);
-      } else {
-        result.set(it, Bit4::X);
-      }
+    BitString4 result(width());
+    for (size_t it = 0; it < limbs(); it++) {
+      Limb unknown_or_both_z = (data().b[it] & (data().a[it] | other.data().b[it])) |
+        (other.data().a[it] & other.data().b[it]);
+      Limb known_conflict = (data().a[it] ^ other.data().a[it]) & ~(data().b[it] | other.data().b[it]);
+      result.data().a[it] = data().a[it] | other.data().a[it];
+      result.data().b[it] = unknown_or_both_z | known_conflict;
     }
     return result;
   }
@@ -1258,8 +1249,10 @@ namespace bitstring {
       result.copy_from(b);
       return result;
     }
-    for (size_t it = 0; it < a.width(); it++) {
-      result.set(it, a.at(it) == b.at(it) ? a.at(it) : Bit4::X);
+    for (size_t it = 0; it < a.limbs(); it++) {
+      Limb diff = (a.data().a[it] ^ b.data().a[it]) | (a.data().b[it] ^ b.data().b[it]);
+      result.data().a[it] = a.data().a[it] | diff;
+      result.data().b[it] = a.data().b[it] | diff;
     }
     return result;
   }
