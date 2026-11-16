@@ -25,6 +25,11 @@ int main(int argc, char** argv) {
     BitString4 a(100);
     BitString4 b(100);
     unittest_assert(a == b);
+    unittest_assert(BitString4("").width() == 0);
+    unittest_assert(BitString4(std::string(129, 'z')) == BitString4::fully(Bit4::Z, 129));
+    unittest_assert(BitString4(std::vector<Bit4>{Bit4::Zero, Bit4::One, Bit4::X, Bit4::Z}) == BitString4("zx10"));
+    unittest_assert(BitString4(std::vector<Bit4>()).width() == 0);
+    unittest_assert(BitString4(std::vector<Bit4>(129, Bit4::Z)) == BitString4::fully(Bit4::Z, 129));
   });
 
   suite.test("operator~").run([]() {
@@ -48,9 +53,18 @@ int main(int argc, char** argv) {
     unittest_assert(BitString4("010").eq(BitString4("011")) == Bit4::Zero);
     unittest_assert(BitString4("0x0").eq(BitString4("010")) == Bit4::X);
     unittest_assert(BitString4("010").eq(BitString4("0z0")) == Bit4::X);
-    unittest_assert(BitString4("1x0").eq(BitString4("010")) == Bit4::X);
+    unittest_assert(BitString4("1x0").eq(BitString4("010")) == Bit4::Zero);
     unittest_assert(BitString4::ones(100).eq(BitString4::ones(100)) == Bit4::One);
     unittest_assert(BitString4::ones(100).eq(BitString4(100)) == Bit4::Zero);
+    unittest_assert(BitString4("0101").eq(BitString4("0101")) == Bit4::One);
+    unittest_assert(BitString4("0101").eq(BitString4("0001")) == Bit4::Zero);
+    unittest_assert(BitString4("01xz").eq(BitString4("01xz")) == Bit4::X);
+    unittest_assert(BitString4("1x01").eq(BitString4("0001")) == Bit4::Zero);
+    unittest_assert(BitString4("0001").eq(BitString4("1z01")) == Bit4::Zero);
+    unittest_assert(BitString4::ones(129).eq(BitString4::ones(129)) == Bit4::One);
+    unittest_assert(BitString4(0).eq(BitString4(0)) == Bit4::One);
+    unittest_assert(BitString4::fully(Bit4::X, 129).eq(BitString4::ones(129)) == Bit4::X);
+    unittest_assert(BitString4::concat(BitString4("1"), BitString4::fully(Bit4::X, 128)).eq(BitString4::zeros(129)) == Bit4::Zero);
   });
 
   suite.test("lt_u").run([]() {
@@ -148,6 +162,152 @@ int main(int argc, char** argv) {
     std::ostringstream stream;
     BitString4("01zx").write_hex(stream);
     unittest_assert(stream.str() == "4'h01zx");
+  });
+
+  suite.test("resolve").run([]() {
+    unittest_assert(BitString4("01xz").resolve(BitString4("zzzz")) == BitString4("01xz"));
+    unittest_assert(BitString4("zzzz").resolve(BitString4("01xz")) == BitString4("01xz"));
+    unittest_assert(BitString4("0011").resolve(BitString4("0101")) == BitString4("0xx1"));
+    unittest_assert(BitString4("xxzz").resolve(BitString4("zzxx")) == BitString4("xxxx"));
+    unittest_assert(BitString4::ones(129).resolve(BitString4::fully(Bit4::Z, 129)) == BitString4::ones(129));
+  });
+
+  suite.test("as_float32").run([]() {
+    unittest_assert(BitString4(32, 0x00000000).as_float32() == 0.0f);
+    unittest_assert(BitString4(32, 0x3fc00000).as_float32() == 1.5f);
+    unittest_assert(BitString4(32, 0xc0200000).as_float32() == -2.5f);
+  });
+
+  suite.test("as_float64").run([]() {
+    unittest_assert(BitString4(64, 0x0000000000000000).as_float64() == 0.0);
+    unittest_assert(BitString4(64, 0x3ff8000000000000).as_float64() == 1.5);
+    unittest_assert(BitString4(64, 0xc004000000000000).as_float64() == -2.5);
+  });
+
+  suite.test("match_z").run([]() {
+    unittest_assert(BitString4("01xz").match_z(BitString4("01xz")));
+    unittest_assert(BitString4("01xz").match_z(BitString4("zzzz")));
+    unittest_assert(!BitString4("0101").match_z(BitString4("01x1")));
+    unittest_assert(!BitString4("z101").match_z(BitString4("0101")));
+    unittest_assert(!BitString4("01").match_z(BitString4("zzz")));
+    unittest_assert(BitString4::ones(129).match_z(BitString4::fully(Bit4::Z, 129)));
+  });
+
+  suite.test("match_x_z").run([]() {
+    unittest_assert(BitString4("01xz").match_x_z(BitString4("01xz")));
+    unittest_assert(BitString4("0101").match_x_z(BitString4("xzxz")));
+    unittest_assert(!BitString4("x101").match_x_z(BitString4("0101")));
+    unittest_assert(!BitString4("0101").match_x_z(BitString4("0001")));
+    unittest_assert(!BitString4("01").match_x_z(BitString4("xxx")));
+    unittest_assert(BitString4::ones(129).match_x_z(BitString4::fully(Bit4::X, 129)));
+  });
+
+  suite.test("clog2").run([]() {
+    unittest_assert(BitString4(0).clog2() == 0);
+    unittest_assert(BitString4("0000").clog2() == 0);
+    unittest_assert(BitString4("0001").clog2() == 0);
+    unittest_assert(BitString4("0010").clog2() == 1);
+    unittest_assert(BitString4("0011").clog2() == 2);
+    unittest_assert(BitString4("1000").clog2() == 3);
+    unittest_assert(BitString4("1001").clog2() == 4);
+    unittest_assert(BitString4(129, 1).shl(128).clog2() == 128);
+    unittest_assert(BitString4::ones(129).clog2() == 129);
+  });
+
+  suite.test("count_ones").run([]() {
+    unittest_assert(BitString4(0).count_ones() == 0);
+    unittest_assert(BitString4("0000").count_ones() == 0);
+    unittest_assert(BitString4("1xz1").count_ones() == 2);
+    unittest_assert(BitString4::ones(129).count_ones() == 129);
+  });
+
+  suite.test("is_one_hot").run([]() {
+    unittest_assert(!BitString4("0000").is_one_hot());
+    unittest_assert(BitString4("0100").is_one_hot());
+    unittest_assert(!BitString4("0101").is_one_hot());
+    unittest_assert(BitString4("x1z0").is_one_hot());
+    unittest_assert(BitString4(129, 1).shl(128).is_one_hot());
+  });
+
+  suite.test("is_one_hot0").run([]() {
+    unittest_assert(BitString4("0000").is_one_hot0());
+    unittest_assert(BitString4("0100").is_one_hot0());
+    unittest_assert(!BitString4("0101").is_one_hot0());
+    unittest_assert(BitString4("xz00").is_one_hot0());
+    unittest_assert(!BitString4::ones(129).is_one_hot0());
+  });
+
+  suite.test("case_eq").run([]() {
+    unittest_assert(BitString4("01xz").case_eq(BitString4("01xz")) == BitString4("1"));
+    unittest_assert(BitString4("01xz").case_eq(BitString4("01zx")) == BitString4("0"));
+    unittest_assert(BitString4("01xz").case_eq(BitString4("0101")) == BitString4("0"));
+    unittest_assert(BitString4::fully(Bit4::X, 129).case_eq(BitString4::fully(Bit4::X, 129)) == BitString4("1"));
+  });
+
+  suite.test("div_u").run([]() {
+    unittest_assert(BitString4(8, 17).div_u(BitString4(8, 3)) == BitString4(8, 5));
+    unittest_assert(BitString4(4, 15).div_u(BitString4(4, 2)) == BitString4(4, 7));
+    unittest_assert(BitString4(8, 17).div_u(BitString4(8)) == BitString4::fully(Bit4::X, 8));
+    unittest_assert(BitString4("x001").div_u(BitString4("0010")) == BitString4("xxxx"));
+    unittest_assert(BitString4("0001").div_u(BitString4("00z1")) == BitString4("xxxx"));
+    unittest_assert(BitString4(64, UINT64_MAX).div_u(BitString4(64, 1)) == BitString4(64, UINT64_MAX));
+  });
+
+  suite.test("div_s").run([]() {
+    unittest_assert(BitString4(8, -17).div_s(BitString4(8, 3)) == BitString4(8, -5));
+    unittest_assert(BitString4(8, 17).div_s(BitString4(8, -3)) == BitString4(8, -5));
+    unittest_assert(BitString4(8, -17).div_s(BitString4(8, -3)) == BitString4(8, 5));
+    unittest_assert(BitString4("1000").div_s(BitString4("1111")) == BitString4("1000"));
+    unittest_assert(BitString4(64, INT64_MIN).div_s(BitString4(64, -1)) == BitString4(64, INT64_MIN));
+    unittest_assert(BitString4(8, 17).div_s(BitString4(8)) == BitString4::fully(Bit4::X, 8));
+    unittest_assert(BitString4("x001").div_s(BitString4("0010")) == BitString4("xxxx"));
+    unittest_assert(BitString4("0001").div_s(BitString4("00z1")) == BitString4("xxxx"));
+  });
+
+  suite.test("mod_u").run([]() {
+    unittest_assert(BitString4(8, 17).mod_u(BitString4(8, 3)) == BitString4(8, 2));
+    unittest_assert(BitString4(4, 15).mod_u(BitString4(4, 2)) == BitString4(4, 1));
+    unittest_assert(BitString4(8, 17).mod_u(BitString4(8)) == BitString4::fully(Bit4::X, 8));
+    unittest_assert(BitString4("z001").mod_u(BitString4("0010")) == BitString4("xxxx"));
+    unittest_assert(BitString4("0001").mod_u(BitString4("00x1")) == BitString4("xxxx"));
+    unittest_assert(BitString4(64, UINT64_MAX).mod_u(BitString4(64, 2)) == BitString4(64, 1));
+  });
+
+  suite.test("mod_s").run([]() {
+    unittest_assert(BitString4(8, -17).mod_s(BitString4(8, 3)) == BitString4(8, -2));
+    unittest_assert(BitString4(8, 17).mod_s(BitString4(8, -3)) == BitString4(8, 2));
+    unittest_assert(BitString4(8, -17).mod_s(BitString4(8, -3)) == BitString4(8, -2));
+    unittest_assert(BitString4("1000").mod_s(BitString4("1111")) == BitString4("0000"));
+    unittest_assert(BitString4(64, INT64_MIN).mod_s(BitString4(64, -1)) == BitString4(64));
+    unittest_assert(BitString4(8, 17).mod_s(BitString4(8)) == BitString4::fully(Bit4::X, 8));
+    unittest_assert(BitString4("z001").mod_s(BitString4("0010")) == BitString4("xxxx"));
+    unittest_assert(BitString4("0001").mod_s(BitString4("00x1")) == BitString4("xxxx"));
+  });
+
+  suite.test("pow").run([]() {
+    unittest_assert(BitString4(8, 3).pow(BitString4(8, 4)) == BitString4(8, 81));
+    unittest_assert(BitString4(4, 3).pow(BitString4(4, 4)) == BitString4(4, 1));
+    unittest_assert(BitString4(8, 0).pow(BitString4(8, 0)) == BitString4(8, 1));
+    unittest_assert(BitString4(8, 0).pow(BitString4(8, 1)) == BitString4(8, 0));
+    unittest_assert(BitString4("00x1").pow(BitString4("0010")) == BitString4("xxxx"));
+    unittest_assert(BitString4("0011").pow(BitString4("00z0")) == BitString4("xxxx"));
+    unittest_assert(BitString4(64, 2).pow(BitString4(64, 63)) == BitString4(64, uint64_t(1) << 63));
+  });
+
+  suite.test("mux").run([]() {
+    unittest_assert(BitString4("1").mux(BitString4("01xz"), BitString4("zx10")) == BitString4("01xz"));
+    unittest_assert(BitString4("0").mux(BitString4("01xz"), BitString4("zx10")) == BitString4("zx10"));
+    unittest_assert(BitString4("x").mux(BitString4("01xz"), BitString4("01xz")) == BitString4("01xz"));
+    unittest_assert(BitString4("z").mux(BitString4("1zzx"), BitString4("0zzz")) == BitString4("xzzx"));
+    unittest_assert(BitString4("x").mux(BitString4::ones(129), BitString4::zeros(129)) == BitString4::fully(Bit4::X, 129));
+  });
+
+  suite.test("to_bitstring2").run([]() {
+    unittest_assert(BitString4("01xz").to_bitstring2() == BitString2(4, 0b0100));
+    unittest_assert(BitString4::ones(129).to_bitstring2() == BitString2::ones(129));
+    unittest_assert(BitString4::fully(Bit4::X, 129).to_bitstring2() == BitString2::zeros(129));
+    unittest_assert(BitString4::fully(Bit4::Z, 129).to_bitstring2() == BitString2::zeros(129));
+    unittest_assert(BitString4(0).to_bitstring2().width() == 0);
   });
 
   return suite.finish();
